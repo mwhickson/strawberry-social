@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::Read;
 use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -111,7 +111,7 @@ impl CharacterCard {
 
             let mut type_buf = [0u8; 4];
             file.read_exact(&mut type_buf)?;
-            let chunk_type = String::from_utf8_lossy(&type_buf);
+            let chunk_type = String::from_utf8_lossy(&type_buf).to_string();
 
             let mut chunk_data = vec![0u8; length];
             file.read_exact(&mut chunk_data)?;
@@ -120,22 +120,52 @@ impl CharacterCard {
             file.read_exact(&mut crc_buf)?;
 
             if chunk_type == "tEXt" || chunk_type == "iTXt" {
-                let parts: Vec<&[u8]> = chunk_data.splitn(2, |&b| b == 0).collect();
-                if parts.len() == 2 {
-                    let keyword = String::from_utf8_lossy(parts[0]).trim().to_lowercase();
-                    // For iTXt, clean up extra headers if needed; simplified text extraction:
-                    let text_bytes = if chunk_type == "iTXt" {
-                        let inner_parts: Vec<&[u8]> = parts[1].splitn(4, |&b| b == 0).collect();
-                        if inner_parts.len() == 4 { inner_parts[3] } else { parts[1] }
-                    } else {
-                        parts[1]
-                    };
-                    let text = String::from_utf8_lossy(text_bytes).to_string();
+                // Log found text chunks to help debug metadata placement
+                tracing::info!("🔍 Found PNG text chunk [{}] of length {} bytes", chunk_type, length);
 
-                    if keyword == "ccv3" {
-                        ccv3_data = Some(text);
-                    } else if keyword == "chara" {
-                        chara_data = Some(text);
+                // tEXt format: keyword \0 text
+                // iTXt format: keyword \0 compression_flag compression_method language_tag \0 translated_keyword \0 text
+                if chunk_type == "tEXt" {
+                    if let Some(pos) = chunk_data.iter().position(|&b| b == 0) {
+                        let keyword = String::from_utf8_lossy(&chunk_data[..pos]).trim().to_lowercase();
+                        let text = String::from_utf8_lossy(&chunk_data[pos + 1..]).to_string();
+                        tracing::info!("   -> tEXt keyword: '{}'", keyword);
+                        if keyword == "ccv3" {
+                            ccv3_data = Some(text);
+                        } else if keyword == "chara" {
+                            chara_data = Some(text);
+                        }
+                    }
+                } else if chunk_type == "iTXt" {
+                    // Find first null terminator for keyword
+                    if let Some(pos1) = chunk_data.iter().position(|&b| b == 0) {
+                        let keyword = String::from_utf8_lossy(&chunk_data[..pos1]).trim().to_lowercase();
+                        tracing::info!("   -> iTXt keyword: '{}'", keyword);
+
+                        // Skip past null terminator, compression flag (1), compression method (1), and language tag until next nulls
+                        let remainder = &chunk_data[pos1 + 1..];
+                        if remainder.len() >= 2 {
+                            // Find the 3rd null byte which precedes the text in iTXt format
+                            let mut null_counts = 0;
+                            let mut text_start = 0;
+                            for (idx, &b) in remainder.iter().enumerate() {
+                                if b == 0 {
+                                    null_counts += 1;
+                                    if null_counts == 3 {
+                                        text_start = idx + 1;
+                                        break;
+                                    }
+                                }
+                            }
+                            if text_start > 0 && text_start < remainder.len() {
+                                let text = String::from_utf8_lossy(&remainder[text_start..]).to_string();
+                                if keyword == "ccv3" {
+                                    ccv3_data = Some(text);
+                                } else if keyword == "chara" {
+                                    chara_data = Some(text);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -148,7 +178,10 @@ impl CharacterCard {
         let raw_b64 = ccv3_data.or(chara_data)
             .ok_or("No character metadata ('ccv3' or 'chara') found in PNG image.")?;
 
-        let decoded_bytes = general_purpose::STANDARD.decode(raw_b64.trim())?;
+        // Clean up any extraneous whitespace or newlines in base64 string
+        let cleaned_b64: String = raw_b64.chars().filter(|c| !c.is_whitespace()).collect();
+
+        let decoded_bytes = general_purpose::STANDARD.decode(&cleaned_b64)?;
         let json_str = String::from_utf8(decoded_bytes)?;
         Self::from_json_str(&json_str)
     }

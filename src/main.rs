@@ -6,6 +6,7 @@ use axum::{
     Router,
 };
 use rust_embed::RustEmbed;
+use std::fs::File;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -29,12 +30,13 @@ pub struct AppState {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging
+    // Initialize logging to file: strawberry.log
+    let log_file = File::create("strawberry.log")?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
         ))
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().with_writer(log_file).with_ansi(false))
         .init();
 
     // Ensure local directories exist

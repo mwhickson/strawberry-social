@@ -1,6 +1,6 @@
 use axum::{
     extract::{Path, State},
-    routing::{get, post},
+    routing::{get},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -18,9 +18,9 @@ pub fn router() -> Router<Arc<AppState>> {
 }
 
 async fn list_sessions(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ChatSession>>, StatusCodeResponse> {
-    let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
+    let db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
     let sessions = db.get_sessions().map_err(internal_error)?;
     Ok(Json(sessions))
 }
@@ -32,14 +32,14 @@ struct CreateSessionPayload {
 }
 
 async fn create_session(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Json(payload): Json<CreateSessionPayload>,
 ) -> Result<Json<ChatSession>, StatusCodeResponse> {
     let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
     let id = db
         .create_session(&payload.character_name, &payload.title)
         .map_err(internal_error)?;
-    
+
     Ok(Json(ChatSession {
         id,
         character_name: payload.character_name,
@@ -69,7 +69,7 @@ struct SendMessageResponse {
 }
 
 async fn send_message(
-    State(state): State<Arc<AppState>>,
+    State(_state): State<Arc<AppState>>,
     Path(session_id): Path<i64>,
     Json(payload): Json<SendMessagePayload>,
 ) -> Result<Json<SendMessageResponse>, StatusCodeResponse> {
@@ -91,15 +91,15 @@ async fn send_message(
 
     // 3. Call local LLM endpoint
     let llm_client = LlmClient::new(
-        state.config.llm.api_base_url.clone(),
-        state.config.llm.api_key.clone(),
+        _state.config.llm.api_base_url.clone(),
+        _state.config.llm.api_key.clone(),
     );
 
     let llm_req = ChatCompletionRequest {
-        model: state.config.llm.default_model.clone(),
+        model: _state.config.llm.default_model.clone(),
         messages: llm_messages,
-        temperature: state.config.llm.temperature,
-        top_p: state.config.llm.top_p,
+        temperature: _state.config.llm.temperature,
+        top_p: _state.config.llm.top_p,
         max_tokens: 512,
         stream: false,
     };
