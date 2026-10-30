@@ -17,8 +17,8 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 
-# HTTP Client (for local llama.cpp/Koboldcpp calls)
-reqwest = { version = "0.12", features = ["json", "stream"] }
+# HTTP Client (using rustls-tls to avoid OpenSSL system requirements)
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 tokio-stream = "0.1"
 
 # Database & Memory
@@ -28,7 +28,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 image = "0.25"
 base64 = "0.22"
 
-# Utilities
+# Utilities & Logging
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+mime_guess = "2.0"
 open = "5.1"

@@ -153,3 +153,38 @@ impl CharacterCard {
         Self::from_json_str(&json_str)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SAMPLE_JSON_CARD: &str = r#"{
+        "spec": "chara_card_v2",
+        "spec_version": "2.0",
+        "data": {
+            "name": "Test Character",
+            "description": "A brave test hero.",
+            "personality": "Bold, curious, helpful.",
+            "scenario": "Testing environment.",
+            "first_mes": "Hello! Ready for testing?",
+            "creator": "Developer"
+        }
+    }"#;
+
+    #[test]
+    fn test_parse_valid_json_card() {
+        let card = CharacterCard::from_json_str(SAMPLE_JSON_CARD);
+        assert!(card.is_ok(), "Failed to parse valid V2 JSON card");
+        let card = card.unwrap();
+        assert_eq!(card.data.name, "Test Character");
+        assert_eq!(card.data.description, "A brave test hero.");
+        assert_eq!(card.spec.as_deref(), Some("chara_card_v2"));
+    }
+
+    #[test]
+    fn test_parse_invalid_json() {
+        let invalid_json = "{ invalid json data }";
+        let card = CharacterCard::from_json_str(invalid_json);
+        assert!(card.is_err(), "Expected error when parsing invalid JSON");
+    }
+}

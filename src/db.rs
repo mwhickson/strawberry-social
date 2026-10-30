@@ -26,7 +26,7 @@ pub struct Database {
 impl Database {
     pub fn init<P: AsRef<Path>>(path: P) -> Result<Self> {
         let conn = Connection::open(path)?;
-        
+
         conn.execute(
             "CREATE TABLE IF NOT EXISTS sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,5 +105,44 @@ impl Database {
             messages.push(msg?);
         }
         Ok(messages)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_database_sessions_and_messages() {
+        // Initialize an in-memory SQLite database for testing
+        let mut db = Database::init(":memory:").expect("Failed to initialize in-memory DB");
+
+        // Test session creation
+        let session_id = db.create_session("Test Character", "First Chat Session")
+            .expect("Failed to create session");
+        assert!(session_id > 0, "Session ID should be a positive integer");
+
+        // Test retrieving sessions
+        let sessions = db.get_sessions().expect("Failed to retrieve sessions");
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(sessions[0].character_name, "Test Character");
+        assert_eq!(sessions[0].title, "First Chat Session");
+
+        // Test adding messages
+        let msg_id1 = db.add_message(session_id, "user", "Hello there!")
+            .expect("Failed to add user message");
+        let msg_id2 = db.add_message(session_id, "assistant", "Greetings! How can I assist you today?")
+            .expect("Failed to add assistant message");
+
+        assert!(msg_id1 > 0);
+        assert!(msg_id2 > 0);
+
+        // Test retrieving messages
+        let messages = db.get_messages(session_id).expect("Failed to retrieve messages");
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "user");
+        assert_eq!(messages[0].content, "Hello there!");
+        assert_eq!(messages[1].role, "assistant");
+        assert_eq!(messages[1].content, "Greetings! How can I assist you today?");
     }
 }

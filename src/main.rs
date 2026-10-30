@@ -2,7 +2,7 @@ use axum::{
     body::Body,
     http::{header, HeaderValue, StatusCode, Uri},
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use rust_embed::RustEmbed;
@@ -12,6 +12,11 @@ use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
+mod card;
+mod db;
+mod llm;
+mod routes;
+
 use config::AppConfig;
 
 #[derive(RustEmbed)]
