@@ -20,23 +20,42 @@ pub struct CharacterSummary {
 
 async fn list_characters() -> Json<Vec<CharacterSummary>> {
     let mut summaries = Vec::new();
-    let dir = Path::new("characters");
+    let root_dir = Path::new("characters");
 
-    if let Ok(entries) = fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                if let Ok(card) = CharacterCard::from_file(&path) {
-                    summaries.push(CharacterSummary {
-                        filename: path.file_name().unwrap().to_string_lossy().to_string(),
-                        name: card.data.name,
-                        description: card.data.description,
-                        creator: card.data.creator,
-                    });
+    // Helper to recursively scan directories for cards
+    fn scan_directory(dir: &Path, summaries: &mut Vec<CharacterSummary>) {
+        if let Ok(entries) = fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    scan_directory(&path, summaries);
+                } else if path.is_file() {
+                    let ext = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_lowercase();
+
+                    if ext == "json" || ext == "png" {
+                        match CharacterCard::from_file(&path) {
+                            Ok(card) => {
+                                summaries.push(CharacterSummary {
+                                    filename: path.file_name().unwrap().to_string_lossy().to_string(),
+                                    name: card.data.name,
+                                    description: card.data.description,
+                                    creator: card.data.creator,
+                                });
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to parse card {}: {}", path.display(), e);
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 
+    scan_directory(root_dir, &mut summaries);
     Json(summaries)
 }

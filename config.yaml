@@ -1,0 +1,14 @@
+server:
+  host: 127.0.0.1
+  port: 8080
+  open_browser_on_start: true
+llm:
+  api_base_url: http://127.0.0.1:5001/v1
+  api_key: not-needed
+  default_model: local-model
+  context_window: 4096
+  temperature: 0.7
+  top_p: 0.9
+ui:
+  theme: dark
+  stream_responses: true

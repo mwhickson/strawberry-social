@@ -49,12 +49,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::load_or_create("config.yaml")?;
     let state = Arc::new(AppState { config: config.clone() });
 
-    // Build Axum router
+    // Build Axum router combining API routes and static asset fallback
     let app = Router::new()
         .route("/api/health", get(|| async { "OK" }))
-        // Embedded Static Assets
-        .fallback(static_handler)
-        .with_state(state);
+        .merge(routes::create_router(state))
+        .fallback(static_handler);
 
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port).parse()?;
     tracing::info!("Strawberry Social starting on http://{}", addr);

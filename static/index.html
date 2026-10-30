@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Strawberry Social</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar: Characters & Sessions -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>🍓 Strawberry Social</h2>
+                <p class="subtitle">Lightweight AI Chat</p>
+            </div>
+
+            <div class="section-title">Character Roster</div>
+            <div id="character-list" class="roster-list">
+                <div class="loading-text">Loading characters...</div>
+            </div>
+
+            <div class="section-title">Chat Sessions</div>
+            <div id="session-list" class="session-list">
+                <div class="loading-text">No active sessions.</div>
+            </div>
+        </aside>
+
+        <!-- Main Chat Area -->
+        <main class="chat-area">
+            <header class="chat-header">
+                <h3 id="current-chat-title">Select a character to start chatting</h3>
+            </header>
+
+            <div id="chat-messages" class="chat-messages">
+                <div class="welcome-banner">
+                    <h3>Welcome to Strawberry Social</h3>
+                    <p>Select a character card from your <code>/characters</code> folder using the sidebar to begin.</p>
+                </div>
+            </div>
+
+            <footer class="chat-input-area">
+                <form id="chat-form" class="chat-form">
+                    <input 
+                        type="text" 
+                        id="message-input" 
+                        placeholder="Type a message..." 
+                        autocomplete="off" 
+                        disabled
+                    >
+                    <button type="submit" id="send-btn" disabled>Send</button>
+                </form>
+            </footer>
+        </main>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+</html>
