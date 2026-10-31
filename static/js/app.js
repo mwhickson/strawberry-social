@@ -260,3 +260,43 @@ function formatMessage(text) {
 function escapeHtml(str) {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    loadCharacters();
+    loadSessions();
+
+    const chatForm = document.getElementById("chat-form");
+    chatForm.addEventListener("submit", handleSendMessage);
+
+    // Upload handling
+    const uploadBtn = document.getElementById("upload-btn");
+    const fileInput = document.getElementById("file-input");
+
+    uploadBtn.onclick = () => fileInput.click();
+    fileInput.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+            const res = await fetch("/api/characters", {
+                method: "POST",
+                body: formData
+            });
+
+            if (res.ok) {
+                loadCharacters();
+            } else {
+                const errText = await res.text();
+                alert(`Upload failed: ${errText}`);
+            }
+        } catch (err) {
+            console.error("Failed to upload card:", err);
+            alert("Failed to upload character card.");
+        } finally {
+            fileInput.value = "";
+        }
+    };
+});

@@ -1,4 +1,5 @@
 use axum::{
+    extract::Multipart,
     routing::get,
     Json, Router,
 };
@@ -6,10 +7,11 @@ use std::fs;
 use std::path::Path;
 use crate::card::CharacterCard;
 use base64::{engine::general_purpose, Engine as _};
+use std::sync::Arc;
 
-pub fn router() -> Router<std::sync::Arc<crate::AppState>> {
+pub fn router() -> Router<Arc<crate::AppState>> {
     Router::new()
-        .route("/", get(list_characters))
+        .route("/", get(list_characters).post(upload_character))
 }
 
 #[derive(serde::Serialize)]
@@ -25,7 +27,6 @@ async fn list_characters() -> Json<Vec<CharacterSummary>> {
     let mut summaries = Vec::new();
     let root_dir = Path::new("characters");
 
-    // Helper to recursively scan directories for cards
     fn scan_directory(dir: &Path, summaries: &mut Vec<CharacterSummary>) {
         if let Ok(entries) = fs::read_dir(dir) {
             for entry in entries.flatten() {
@@ -42,7 +43,6 @@ async fn list_characters() -> Json<Vec<CharacterSummary>> {
                     if ext == "json" || ext == "png" {
                         match CharacterCard::from_file(&path) {
                             Ok(card) => {
-                                // Generate base64 data URL for the avatar image
                                 let avatar_url = if ext == "png" {
                                     match fs::read(&path) {
                                         Ok(bytes) => Some(format!(
@@ -86,4 +86,54 @@ async fn list_characters() -> Json<Vec<CharacterSummary>> {
 
     scan_directory(root_dir, &mut summaries);
     Json(summaries)
+}
+
+async fn upload_character(
+    mut multipart: Multipart,
+) -> Result<Json<CharacterSummary>, StatusCodeResponse> {
+    fs::create_dir_all("characters").map_err(internal_error)?;
+
+    while let Some(field) = multipart.next_field().await.map_err(internal_error)? {
+        let filename = field.file_name().unwrap_or("card.json").to_string();
+        let data = field.bytes().await.map_err(internal_error)?;
+
+        let dest_path = Path::new("characters").join(&filename);
+        fs::write(&dest_path, &data).map_err(internal_error)?;
+
+        // Validate card
+        let card = CharacterCard::from_file(&dest_path).map_err(|e| {
+            let _ = fs::remove_file(&dest_path);
+            StatusCodeResponse(axum::http::StatusCode::BAD_REQUEST, format!("Invalid character card: {}", e))
+        })?;
+
+        let avatar_url = if filename.to_lowercase().ends_with(".png") {
+            Some(format!(
+                "data:image/png;base64,{}",
+                general_purpose::STANDARD.encode(&data)
+            ))
+        } else {
+            None
+        };
+
+        return Ok(Json(CharacterSummary {
+            filename,
+            name: card.data.name,
+            description: card.data.description,
+            creator: card.data.creator,
+            avatar_url,
+        }));
+    }
+
+    Err(StatusCodeResponse(axum::http::StatusCode::BAD_REQUEST, "No file uploaded".into()))
+}
+
+struct StatusCodeResponse(axum::http::StatusCode, String);
+impl axum::response::IntoResponse for StatusCodeResponse {
+    fn into_response(self) -> axum::response::Response {
+        (self.0, self.1).into_response()
+    }
+}
+
+fn internal_error<E: std::fmt::Display>(err: E) -> StatusCodeResponse {
+    StatusCodeResponse(axum::http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
 }

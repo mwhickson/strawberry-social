@@ -15,6 +15,11 @@
                 <p class="subtitle">Lightweight AI Chat</p>
             </div>
 
+            <div class="sidebar-action-bar">
+                <button id="upload-btn" class="action-btn">+ Upload Card</button>
+                <input type="file" id="file-input" accept=".json,.png" style="display: none;">
+            </div>
+
             <div class="section-title">Character Roster</div>
             <div id="character-list" class="roster-list">
                 <div class="loading-text">Loading characters...</div>
@@ -41,11 +46,11 @@
 
             <footer class="chat-input-area">
                 <form id="chat-form" class="chat-form">
-                    <input 
-                        type="text" 
-                        id="message-input" 
-                        placeholder="Type a message..." 
-                        autocomplete="off" 
+                    <input
+                        type="text"
+                        id="message-input"
+                        placeholder="Type a message..."
+                        autocomplete="off"
                         disabled
                     >
                     <button type="submit" id="send-btn" disabled>Send</button>

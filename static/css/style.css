@@ -58,6 +58,28 @@ body {
     margin: 16px 0 8px 0;
 }
 
+.sidebar-action-bar {
+    margin-top: 12px;
+}
+
+.action-btn {
+    width: 100%;
+    padding: 8px 12px;
+    background-color: var(--bg-tertiary);
+    border: 1px dashed var(--border);
+    color: var(--text-primary);
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85srem;
+    font-weight: 500;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.action-btn:hover {
+    background-color: #32323d;
+    border-color: var(--accent);
+}
+
 .roster-list, .session-list {
     overflow-y: auto;
     flex: 1;

@@ -7,7 +7,7 @@ description = "Lightweight, local-first LLM character chat client"
 
 [dependencies]
 # Web Framework & Async Runtime
-axum = { version = "0.7", features = ["macros"] }
+axum = { version = "0.7", features = ["macros", "multipart"] }
 tokio = { version = "1.38", features = ["full"] }
 tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
 rust-embed = "8.4"
