@@ -8,9 +8,10 @@ use axum::{
 use rust_embed::RustEmbed;
 use std::fs::File;
 use std::net::SocketAddr;
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use directories::ProjectDirs;
 
 mod config;
 mod card;
@@ -26,12 +27,37 @@ struct Asset;
 
 pub struct AppState {
     pub config: AppConfig,
+    pub data_dir: PathBuf,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Initialize logging to file: strawberry.log
-    let log_file = File::create("strawberry.log")?;
+    // Determine platform-standard data directory
+    // Linux: ~/.local/share/strawberry-social
+    // Windows: C:\Users\<User>\AppData\Local\StrawberrySocial
+    let proj_dirs = ProjectDirs::from("com", "StrawberrySocial", "StrawberrySocial")
+        .ok_or("Failed to determine home directory")?;
+
+    let data_dir = proj_dirs.data_local_dir();
+    std::fs::create_dir_all(data_dir)?;
+
+    // Define absolute paths for subdirectories and files
+    let characters_dir = data_dir.join("characters");
+    let avatars_dir = characters_dir.join("avatars");
+    let lorebooks_dir = characters_dir.join("lorebooks");
+    let sessions_dir = data_dir.join("sessions");
+    let config_path = data_dir.join("config.yaml");
+    let log_path = data_dir.join("strawberry.log");
+
+    // Ensure platform directories exist
+    for dir in &[&characters_dir, &avatars_dir, &lorebooks_dir, &sessions_dir] {
+        if !dir.exists() {
+            std::fs::create_dir_all(dir)?;
+        }
+    }
+
+    // Initialize logging to file in the data directory
+    let log_file = File::create(&log_path)?;
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
@@ -39,26 +65,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer().with_writer(log_file).with_ansi(false))
         .init();
 
-    // Ensure local directories exist
-    let dirs = ["characters", "characters/avatars", "characters/lorebooks", "sessions"];
-    for dir in dirs.iter() {
-        if !Path::new(dir).exists() {
-            std::fs::create_dir_all(dir)?;
-        }
-    }
+    // Load or generate config.yaml in the standard directory
+    let config = AppConfig::load_or_create(&config_path)?;
+    let state = Arc::new(AppState {
+        config: config.clone(),
+        data_dir: data_dir.to_path_buf(),
+    });
 
-    // Load or generate config.yaml
-    let config = AppConfig::load_or_create("config.yaml")?;
-    let state = Arc::new(AppState { config: config.clone() });
-
-    let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port).parse()?;
-    tracing::info!("Strawberry Social starting on http://{}", addr);
-
-    if config.server.open_browser_on_start {
-        let _ = open::that(format!("http://{}", addr));
-    }
-
-// Build Axum router combining API routes, config, and static asset fallback
+    // Build Axum router combining API routes, config, and static asset fallback
     let app = Router::new()
         .route("/api/health", get(|| async { "OK" }))
         .merge(routes::create_router(state.clone()))

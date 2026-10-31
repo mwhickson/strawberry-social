@@ -1,9 +1,9 @@
 use axum::{
     extract::{Path, State},
-    routing::{get},
+    routing::get,
     Json, Router,
 };
-use rand::seq::SliceRandom; // We'll add rand to Cargo.toml
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::{
@@ -21,9 +21,10 @@ pub fn router() -> Router<Arc<AppState>> {
 }
 
 async fn list_sessions(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
 ) -> Result<Json<Vec<ChatSession>>, StatusCodeResponse> {
-    let db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
+    let db_path = state.data_dir.join("sessions/chats.db");
+    let db = crate::db::Database::init(&db_path).map_err(internal_error)?;
     let sessions = db.get_sessions().map_err(internal_error)?;
     Ok(Json(sessions))
 }
@@ -35,21 +36,21 @@ struct CreateSessionPayload {
 }
 
 async fn create_session(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateSessionPayload>,
 ) -> Result<Json<ChatSession>, StatusCodeResponse> {
-    let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
+    let db_path = state.data_dir.join("sessions/chats.db");
+    let mut db = crate::db::Database::init(&db_path).map_err(internal_error)?;
     let session_id = db
         .create_session(&payload.character_name, &payload.title)
         .map_err(internal_error)?;
 
     // Try to find the character card file to extract its first message / greeting
-    let card = find_character_card(&payload.character_name);
+    let card = find_character_card(&state, &payload.character_name);
 
     if let Some(c) = card {
         let data = c.data;
 
-        // Pick between first_mes and alternate_greetings randomly if available
         let mut possible_greetings = vec![data.first_mes.clone()];
         for alt in &data.alternate_greetings {
             if !alt.is_empty() {
@@ -62,7 +63,6 @@ async fn create_session(
             .cloned()
             .unwrap_or_else(|| "Hello!".to_string());
 
-        // Insert the character's opening greeting into the session history
         db.add_message(session_id, "assistant", &chosen_greeting)
             .map_err(internal_error)?;
     }
@@ -75,9 +75,9 @@ async fn create_session(
     }))
 }
 
-// Helper to locate a character card by name in the /characters directory
-fn find_character_card(name: &str) -> Option<CharacterCard> {
-    let root_dir = std::path::Path::new("characters");
+// Helper to locate a character card by name in the characters directory
+fn find_character_card(state: &AppState, name: &str) -> Option<CharacterCard> {
+    let root_dir = state.data_dir.join("characters");
     let mut found_card = None;
 
     fn search_dir(dir: &std::path::Path, target_name: &str, result: &mut Option<CharacterCard>) {
@@ -98,15 +98,16 @@ fn find_character_card(name: &str) -> Option<CharacterCard> {
         }
     }
 
-    search_dir(root_dir, name, &mut found_card);
+    search_dir(&root_dir, name, &mut found_card);
     found_card
 }
 
 async fn list_messages(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(session_id): Path<i64>,
 ) -> Result<Json<Vec<ChatMessage>>, StatusCodeResponse> {
-    let db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
+    let db_path = state.data_dir.join("sessions/chats.db");
+    let db = crate::db::Database::init(&db_path).map_err(internal_error)?;
     let messages = db.get_messages(session_id).map_err(internal_error)?;
     Ok(Json(messages))
 }
@@ -123,28 +124,25 @@ struct SendMessageResponse {
 }
 
 async fn send_message(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(session_id): Path<i64>,
     Json(payload): Json<SendMessagePayload>,
 ) -> Result<Json<SendMessageResponse>, StatusCodeResponse> {
-    let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
+    let db_path = state.data_dir.join("sessions/chats.db");
+    let mut db = crate::db::Database::init(&db_path).map_err(internal_error)?;
 
-    // 1. Get session info to find character name
     let sessions = db.get_sessions().map_err(internal_error)?;
     let session = sessions.iter().find(|s| s.id == session_id)
         .ok_or_else(|| StatusCodeResponse(axum::http::StatusCode::NOT_FOUND, "Session not found".into()))?;
 
     let character_name = session.character_name.clone();
 
-    // 2. Save user message
     db.add_message(session_id, "user", &payload.content)
         .map_err(internal_error)?;
 
-    // 3. Fetch history for context
     let history = db.get_messages(session_id).map_err(internal_error)?;
 
-    // 4. Build Character Context System Prompt
-    let card = find_character_card(&character_name);
+    let card = find_character_card(&state, &character_name);
     let mut llm_messages = Vec::new();
 
     if let Some(c) = card {
@@ -163,7 +161,6 @@ async fn send_message(
         });
     }
 
-    // Append chat history
     for m in history {
         llm_messages.push(ChatMessagePayload {
             role: m.role,
@@ -171,19 +168,18 @@ async fn send_message(
         });
     }
 
-    // 5. Call local LLM endpoint
     let llm_client = LlmClient::new(
-        _state.config.llm.api_base_url.clone(),
-        _state.config.llm.api_key.clone(),
+        state.config.llm.api_base_url.clone(),
+        state.config.llm.api_key.clone(),
     );
 
     let llm_req = ChatCompletionRequest {
-        model: _state.config.llm.default_model.clone(),
+        model: state.config.llm.default_model.clone(),
         messages: llm_messages,
-        temperature: _state.config.llm.temperature,
-        top_p: _state.config.llm.top_p,
-        max_tokens: std::cmp::min(512, _state.config.llm.context_window),
-        stream: _state.config.ui.stream_responses,
+        temperature: state.config.llm.temperature,
+        top_p: state.config.llm.top_p,
+        max_tokens: std::cmp::min(512, state.config.llm.context_window),
+        stream: state.config.ui.stream_responses,
     };
 
     let resp = llm_client
@@ -207,7 +203,6 @@ async fn send_message(
         .map(|c| c.message.content.clone())
         .unwrap_or_else(|| "(No response generated)".to_string());
 
-    // 6. Save assistant response
     db.add_message(session_id, "assistant", &assistant_content)
         .map_err(internal_error)?;
 
@@ -233,10 +228,11 @@ async fn send_message(
 }
 
 async fn delete_session(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Path(session_id): Path<i64>,
 ) -> Result<axum::http::StatusCode, StatusCodeResponse> {
-    let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
+    let db_path = state.data_dir.join("sessions/chats.db");
+    let mut db = crate::db::Database::init(&db_path).map_err(internal_error)?;
     db.delete_session(session_id).map_err(internal_error)?;
     Ok(axum::http::StatusCode::OK)
 }

@@ -1,5 +1,5 @@
 use axum::{
-    extract::Multipart,
+    extract::{Multipart, State},
     routing::get,
     Json, Router,
 };
@@ -23,9 +23,11 @@ pub struct CharacterSummary {
     avatar_url: Option<String>,
 }
 
-async fn list_characters() -> Json<Vec<CharacterSummary>> {
+async fn list_characters(
+    State(state): State<Arc<crate::AppState>>,
+) -> Json<Vec<CharacterSummary>> {
     let mut summaries = Vec::new();
-    let root_dir = Path::new("characters");
+    let root_dir = state.data_dir.join("characters");
 
     fn scan_directory(dir: &Path, summaries: &mut Vec<CharacterSummary>) {
         if let Ok(entries) = fs::read_dir(dir) {
@@ -84,20 +86,22 @@ async fn list_characters() -> Json<Vec<CharacterSummary>> {
         }
     }
 
-    scan_directory(root_dir, &mut summaries);
+    scan_directory(&root_dir, &mut summaries);
     Json(summaries)
 }
 
 async fn upload_character(
+    State(state): State<Arc<crate::AppState>>,
     mut multipart: Multipart,
 ) -> Result<Json<CharacterSummary>, StatusCodeResponse> {
-    fs::create_dir_all("characters").map_err(internal_error)?;
+    let characters_dir = state.data_dir.join("characters");
+    fs::create_dir_all(&characters_dir).map_err(internal_error)?;
 
     while let Some(field) = multipart.next_field().await.map_err(internal_error)? {
         let filename = field.file_name().unwrap_or("card.json").to_string();
         let data = field.bytes().await.map_err(internal_error)?;
 
-        let dest_path = Path::new("characters").join(&filename);
+        let dest_path = characters_dir.join(&filename);
         fs::write(&dest_path, &data).map_err(internal_error)?;
 
         // Validate card

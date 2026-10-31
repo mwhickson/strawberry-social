@@ -5,6 +5,9 @@ edition = "2021"
 authors = ["Strawberry Social Team"]
 description = "Lightweight, local-first LLM character chat client"
 
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+
 [dependencies]
 # Web Framework & Async Runtime
 axum = { version = "0.7", features = ["macros", "multipart"] }
@@ -29,6 +32,7 @@ image = "0.25"
 base64 = "0.22"
 
 # Utilities & Logging
+directories = "5.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 mime_guess = "2.0"
