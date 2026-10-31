@@ -14,6 +14,8 @@ Strawberry Social natively ingests SillyTavern character cards (V1, V2, and V3 s
 * Native system home-directory data storage following platform conventions.
 * Cross-platform support for Linux, Windows, and macOS.
 
+NOTE: Character Cards can be created with the [Character Card Generator](https://github.com/mwhickson/character-card-generator) desktop application.
+
 ## System Data Locations
 
 On first startup, Strawberry Social automatically creates the necessary directory hierarchy for user data:
