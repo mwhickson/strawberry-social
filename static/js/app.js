@@ -1,5 +1,6 @@
 let currentSessionId = null;
 let currentActiveCharacter = null;
+let currentActiveCard = null;
 
 document.addEventListener("DOMContentLoaded", () => {
     loadCharacters();
@@ -70,6 +71,9 @@ async function selectCharacter(char, element) {
     } catch (err) {
         console.error("Failed to create session:", err);
     }
+
+    currentActiveCard = char; // Ensure your roster loader attaches the full card object or fetch it
+    document.getElementById("profile-btn").style.display = "inline-block";
 }
 
 async function loadSessions() {
@@ -261,6 +265,45 @@ function escapeHtml(str) {
     return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function openProfileDrawer() {
+    if (!currentActiveCard) return;
+
+    document.getElementById("drawer-name").innerText = currentActiveCard.name || "Character Profile";
+
+    const bodyContent = document.getElementById("drawer-body-content");
+    bodyContent.innerHTML = `
+        <div class="profile-section">
+            <div class="profile-avatar-container">
+                ${currentActiveCard.avatar_url ? `<img src="${currentActiveCard.avatar_url}" class="profile-avatar" />` : `<div class="avatar-thumb fallback large">${currentActiveCard.name.charAt(0)}</div>`}
+            </div>
+            <p><strong>Creator:</strong> ${escapeHtml(currentActiveCard.creator || "Unknown")}</p>
+        </div>
+
+        <div class="profile-section">
+            <h3>Description</h3>
+            <p>${formatMessage(currentActiveCard.description || "No description provided.")}</p>
+        </div>
+
+        <div class="profile-section">
+            <h3>Personality</h3>
+            <p>${formatMessage(currentActiveCard.personality || "No personality defined.")}</p>
+        </div>
+
+        <div class="profile-section">
+            <h3>Scenario</h3>
+            <p>${formatMessage(currentActiveCard.scenario || "Default scenario.")}</p>
+        </div>
+    `;
+
+    document.getElementById("profile-drawer").classList.add("open");
+    document.getElementById("profile-overlay").classList.add("open");
+}
+
+function closeProfileDrawer() {
+    document.getElementById("profile-drawer").classList.remove("open");
+    document.getElementById("profile-overlay").classList.remove("open");
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     loadCharacters();
     loadSessions();
@@ -299,4 +342,13 @@ document.addEventListener("DOMContentLoaded", () => {
             fileInput.value = "";
         }
     };
+
+    const profileBtn = document.getElementById("profile-btn");
+    const profileDrawer = document.getElementById("profile-drawer");
+    const profileOverlay = document.getElementById("profile-overlay");
+    const closeDrawerBtn = document.getElementById("close-drawer-btn");
+
+    profileBtn.onclick = () => openProfileDrawer();
+    closeDrawerBtn.onclick = () => closeProfileDrawer();
+    profileOverlay.onclick = () => closeProfileDrawer();
 });

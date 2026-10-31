@@ -34,7 +34,10 @@
         <!-- Main Chat Area -->
         <main class="chat-area">
             <header class="chat-header">
-                <h3 id="current-chat-title">Select a character to start chatting</h3>
+                <div class="chat-header-actions">
+                    <span id="current-chat-title">Select a character to start chatting</span>
+                    <button id="profile-btn" class="profile-toggle-btn" style="display: none;" title="View Character Profile">ℹ️ Profile</button>
+                </div>
             </header>
 
             <div id="chat-messages" class="chat-messages">
@@ -57,6 +60,17 @@
                 </form>
             </footer>
         </main>
+    </div>
+
+    <div id="profile-overlay" class="profile-overlay"></div>
+    <div id="profile-drawer" class="profile-drawer">
+        <div class="drawer-header">
+            <h2 id="drawer-name">Character Name</h2>
+            <button id="close-drawer-btn" class="close-btn">&times;</button>
+        </div>
+        <div class="drawer-body" id="drawer-body-content">
+            <!-- Populated dynamically -->
+        </div>
     </div>
 
     <script src="/js/app.js"></script>
