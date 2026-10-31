@@ -152,6 +152,11 @@ body {
     align-self: flex-start;
 }
 
+.message .rp-action {
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
 /* Chat Input */
 .chat-input-area {
     padding: 16px 24px;

@@ -202,9 +202,28 @@ function appendMessageToUI(role, text) {
 
     const div = document.createElement("div");
     div.className = `message ${role}`;
-    div.innerText = text;
+
+    // Use innerHTML with formatted RP markup for assistant messages (and safe parsing for user)
+    div.innerHTML = formatMessage(text);
+
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+}
+
+function formatMessage(text) {
+    // 1. Escape HTML first to prevent any injection/XSS vulnerabilities
+    let safeText = escapeHtml(text);
+
+    // 2. Convert newlines to breaks
+    safeText = safeText.replace(/\n/g, '<br>');
+
+    // 3. Style RP actions surrounded by asterisks (*action*) into muted italics
+    safeText = safeText.replace(/\*(.*?)\*/g, '<em class="rp-action">$1</em>');
+
+    // 4. Optionally highlight or bold spoken text inside quotes if desired ("speech")
+    // safeText = safeText.replace(/&quot;(.*?)&quot;/g, '<strong>&quot;$1&quot;</strong>');
+
+    return safeText;
 }
 
 function escapeHtml(str) {
