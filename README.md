@@ -4,7 +4,7 @@ Strawberry Social is a lightweight, local-first roleplay chat interface for loca
 
 Strawberry Social natively ingests SillyTavern character cards (V1, V2, and V3 specifications in JSON or PNG chunk formats) and communicates with any OpenAI-compatible API backend (such as LM Studio, KoboldCPP, Ollama, or LocalAI).
 
-## Why "Strawberry Social"
+## Why "Strawberry Social"?
 
 A "Strawberry Social" is a (Victorian era) gathering where a community gathers to celebrate the strawberry harvest.
 
