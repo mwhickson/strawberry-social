@@ -16,7 +16,7 @@ async function loadCharacters() {
         const rosterContainer = document.getElementById("character-list");
 
         if (characters.length === 0) {
-            rosterContainer.innerHTML = `<div class="loading-text">No cards found in /characters. Drop a JSON or PNG card in!</div>`;
+            rosterContainer.innerHTML = `<div class="loading-text">No cards found in /characters.</div>`;
             return;
         }
 
@@ -24,7 +24,19 @@ async function loadCharacters() {
         characters.forEach(char => {
             const div = document.createElement("div");
             div.className = "roster-item";
-            div.innerHTML = `<strong>${escapeHtml(char.name)}</strong><br><small>${escapeHtml(char.creator || 'Unknown creator')}</small>`;
+
+            // Use character avatar or fallback initial
+            const avatarHtml = char.avatar_url
+                ? `<img src="${char.avatar_url}" class="avatar-thumb" alt="${escapeHtml(char.name)}">`
+                : `<div class="avatar-thumb fallback">${escapeHtml(char.name.charAt(0))}</div>`;
+
+            div.innerHTML = `
+                ${avatarHtml}
+                <div class="roster-info">
+                    <strong>${escapeHtml(char.name)}</strong><br>
+                    <small>${escapeHtml(char.creator || 'Unknown')}</small>
+                </div>
+            `;
             div.onclick = () => selectCharacter(char, div);
             rosterContainer.appendChild(div);
         });
@@ -195,18 +207,37 @@ async function handleSendMessage(e) {
 
 function appendMessageToUI(role, text) {
     const container = document.getElementById("chat-messages");
-
-    // Remove welcome banner if present
     const banner = container.querySelector(".welcome-banner");
     if (banner) banner.remove();
 
-    const div = document.createElement("div");
-    div.className = `message ${role}`;
+    const messageWrapper = document.createElement("div");
+    messageWrapper.className = `message-wrapper ${role}`;
 
-    // Use innerHTML with formatted RP markup for assistant messages (and safe parsing for user)
-    div.innerHTML = formatMessage(text);
+    // Avatar element
+    const avatar = document.createElement("div");
+    avatar.className = "msg-avatar";
+    if (role === "assistant" && currentActiveCharacter) {
+        avatar.innerHTML = currentActiveCharacter.avatar_url
+            ? `<img src="${currentActiveCharacter.avatar_url}" alt="Avatar">`
+            : `<div class="fallback">${escapeHtml(currentActiveCharacter.name.charAt(0))}</div>`;
+    } else {
+        // Generic user persona initials (e.g. "M" for Matthew)
+        avatar.innerHTML = `<div class="fallback user-initial">M</div>`;
+    }
 
-    container.appendChild(div);
+    const bubble = document.createElement("div");
+    bubble.className = `message ${role}`;
+    bubble.innerHTML = role === "assistant" ? formatMessage(text) : escapeHtml(text).replace(/\n/g, '<br>');
+
+    if (role === "user") {
+        messageWrapper.appendChild(bubble);
+        messageWrapper.appendChild(avatar);
+    } else {
+        messageWrapper.appendChild(avatar);
+        messageWrapper.appendChild(bubble);
+    }
+
+    container.appendChild(messageWrapper);
     container.scrollTop = container.scrollHeight;
 }
 

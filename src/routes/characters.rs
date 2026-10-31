@@ -5,9 +5,11 @@ use axum::{
 use std::fs;
 use std::path::Path;
 use crate::card::CharacterCard;
+use base64::{engine::general_purpose, Engine as _};
 
 pub fn router() -> Router<std::sync::Arc<crate::AppState>> {
-    Router::new().route("/", get(list_characters))
+    Router::new()
+        .route("/", get(list_characters))
 }
 
 #[derive(serde::Serialize)]
@@ -16,6 +18,7 @@ pub struct CharacterSummary {
     name: String,
     description: String,
     creator: String,
+    avatar_url: Option<String>,
 }
 
 async fn list_characters() -> Json<Vec<CharacterSummary>> {
@@ -39,15 +42,40 @@ async fn list_characters() -> Json<Vec<CharacterSummary>> {
                     if ext == "json" || ext == "png" {
                         match CharacterCard::from_file(&path) {
                             Ok(card) => {
+                                // Generate base64 data URL for the avatar image
+                                let avatar_url = if ext == "png" {
+                                    match fs::read(&path) {
+                                        Ok(bytes) => Some(format!(
+                                            "data:image/png;base64,{}",
+                                            general_purpose::STANDARD.encode(&bytes)
+                                        )),
+                                        Err(_) => None,
+                                    }
+                                } else {
+                                    let png_path = path.with_extension("png");
+                                    if png_path.exists() {
+                                        match fs::read(&png_path) {
+                                            Ok(bytes) => Some(format!(
+                                                "data:image/png;base64,{}",
+                                                general_purpose::STANDARD.encode(&bytes)
+                                            )),
+                                            Err(_) => None,
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                };
+
                                 summaries.push(CharacterSummary {
                                     filename: path.file_name().unwrap().to_string_lossy().to_string(),
                                     name: card.data.name,
                                     description: card.data.description,
                                     creator: card.data.creator,
+                                    avatar_url,
                                 });
                             }
                             Err(e) => {
-                                eprintln!("Failed to parse card {}: {}", path.display(), e);
+                                tracing::error!("Failed to parse card {}: {}", path.display(), e);
                             }
                         }
                     }
