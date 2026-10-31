@@ -78,6 +78,14 @@ impl Database {
         Ok(sessions)
     }
 
+    pub fn delete_session(&mut self, session_id: i64) -> Result<()> {
+        // Messages are handled via FOREIGN KEY ON DELETE CASCADE if enabled,
+        // but let's explicitly delete messages and session to be 100% robust.
+        self.conn.execute("DELETE FROM messages WHERE session_id = ?1", params![session_id])?;
+        self.conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;
+        Ok(())
+    }
+
     pub fn add_message(&mut self, session_id: i64, role: &str, content: &str) -> Result<i64> {
         self.conn.execute(
             "INSERT INTO messages (session_id, role, content) VALUES (?1, ?2, ?3)",

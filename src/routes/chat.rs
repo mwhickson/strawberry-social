@@ -3,9 +3,11 @@ use axum::{
     routing::{get},
     Json, Router,
 };
+use rand::seq::SliceRandom; // We'll add rand to Cargo.toml
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use crate::{
+    card::CharacterCard,
     db::{ChatMessage, ChatSession},
     llm::{ChatCompletionRequest, ChatMessagePayload, LlmClient},
     AppState,
@@ -14,6 +16,7 @@ use crate::{
 pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/sessions", get(list_sessions).post(create_session))
+        .route("/sessions/:id", axum::routing::delete(delete_session))
         .route("/sessions/:id/messages", get(list_messages).post(send_message))
 }
 
@@ -36,16 +39,67 @@ async fn create_session(
     Json(payload): Json<CreateSessionPayload>,
 ) -> Result<Json<ChatSession>, StatusCodeResponse> {
     let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
-    let id = db
+    let session_id = db
         .create_session(&payload.character_name, &payload.title)
         .map_err(internal_error)?;
 
+    // Try to find the character card file to extract its first message / greeting
+    let card = find_character_card(&payload.character_name);
+
+    if let Some(c) = card {
+        let data = c.data;
+
+        // Pick between first_mes and alternate_greetings randomly if available
+        let mut possible_greetings = vec![data.first_mes.clone()];
+        for alt in &data.alternate_greetings {
+            if !alt.is_empty() {
+                possible_greetings.push(alt.clone());
+            }
+        }
+
+        let chosen_greeting = possible_greetings
+            .choose(&mut rand::thread_rng())
+            .cloned()
+            .unwrap_or_else(|| "Hello!".to_string());
+
+        // Insert the character's opening greeting into the session history
+        db.add_message(session_id, "assistant", &chosen_greeting)
+            .map_err(internal_error)?;
+    }
+
     Ok(Json(ChatSession {
-        id,
+        id: session_id,
         character_name: payload.character_name,
         title: payload.title,
         created_at: "".to_string(),
     }))
+}
+
+// Helper to locate a character card by name in the /characters directory
+fn find_character_card(name: &str) -> Option<CharacterCard> {
+    let root_dir = std::path::Path::new("characters");
+    let mut found_card = None;
+
+    fn search_dir(dir: &std::path::Path, target_name: &str, result: &mut Option<CharacterCard>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    search_dir(&path, target_name, result);
+                } else if path.is_file() {
+                    if let Ok(card) = CharacterCard::from_file(&path) {
+                        if card.data.name.eq_ignore_ascii_case(target_name) {
+                            *result = Some(card);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    search_dir(root_dir, name, &mut found_card);
+    found_card
 }
 
 async fn list_messages(
@@ -75,21 +129,49 @@ async fn send_message(
 ) -> Result<Json<SendMessageResponse>, StatusCodeResponse> {
     let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
 
-    // 1. Save user message
+    // 1. Get session info to find character name
+    let sessions = db.get_sessions().map_err(internal_error)?;
+    let session = sessions.iter().find(|s| s.id == session_id)
+        .ok_or_else(|| StatusCodeResponse(axum::http::StatusCode::NOT_FOUND, "Session not found".into()))?;
+
+    let character_name = session.character_name.clone();
+
+    // 2. Save user message
     db.add_message(session_id, "user", &payload.content)
         .map_err(internal_error)?;
 
-    // 2. Fetch history for context
+    // 3. Fetch history for context
     let history = db.get_messages(session_id).map_err(internal_error)?;
-    let llm_messages: Vec<ChatMessagePayload> = history
-        .into_iter()
-        .map(|m| ChatMessagePayload {
+
+    // 4. Build Character Context System Prompt
+    let card = find_character_card(&character_name);
+    let mut llm_messages = Vec::new();
+
+    if let Some(c) = card {
+        let d = c.data;
+        let system_instruction = format!(
+            "You are roleplaying as {}. \
+            Description: {} \
+            Personality: {} \
+            Scenario: {} \
+            Instructions: Stay strictly in character. Never break character or refer to yourself as an AI.",
+            d.name, d.description, d.personality, d.scenario
+        );
+        llm_messages.push(ChatMessagePayload {
+            role: "system".to_string(),
+            content: system_instruction,
+        });
+    }
+
+    // Append chat history
+    for m in history {
+        llm_messages.push(ChatMessagePayload {
             role: m.role,
             content: m.content,
-        })
-        .collect();
+        });
+    }
 
-    // 3. Call local LLM endpoint
+    // 5. Call local LLM endpoint
     let llm_client = LlmClient::new(
         _state.config.llm.api_base_url.clone(),
         _state.config.llm.api_key.clone(),
@@ -125,7 +207,7 @@ async fn send_message(
         .map(|c| c.message.content.clone())
         .unwrap_or_else(|| "(No response generated)".to_string());
 
-    // 4. Save assistant response
+    // 6. Save assistant response
     db.add_message(session_id, "assistant", &assistant_content)
         .map_err(internal_error)?;
 
@@ -150,7 +232,15 @@ async fn send_message(
     }))
 }
 
-// Helper for error conversion
+async fn delete_session(
+    State(_state): State<Arc<AppState>>,
+    Path(session_id): Path<i64>,
+) -> Result<axum::http::StatusCode, StatusCodeResponse> {
+    let mut db = crate::db::Database::init("sessions/chats.db").map_err(internal_error)?;
+    db.delete_session(session_id).map_err(internal_error)?;
+    Ok(axum::http::StatusCode::OK)
+}
+
 struct StatusCodeResponse(axum::http::StatusCode, String);
 impl axum::response::IntoResponse for StatusCodeResponse {
     fn into_response(self) -> axum::response::Response {

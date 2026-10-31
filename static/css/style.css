@@ -198,3 +198,34 @@ body {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+.session-item {
+    padding: 10px 12px;
+    background-color: var(--bg-tertiary);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: background 0.2s;
+    font-size: 0.9rem;
+}
+
+.session-item:hover {
+    background-color: #32323d;
+}
+
+.delete-session-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: color 0.2s, background 0.2s;
+}
+
+.delete-session-btn:hover {
+    color: #e06c75;
+    background: rgba(224, 108, 117, 0.1);
+}

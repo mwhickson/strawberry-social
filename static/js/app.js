@@ -39,7 +39,7 @@ async function selectCharacter(char, element) {
     currentActiveCharacter = char;
 
     document.getElementById("current-chat-title").innerText = `Chatting with ${char.name}`;
-    
+
     // Create a new session for this character
     try {
         const res = await fetch("/api/chat/sessions", {
@@ -66,18 +66,65 @@ async function loadSessions() {
         const sessions = await res.json();
         const sessionContainer = document.getElementById("session-list");
 
-        if (sessions.length === 0) return;
+        if (sessions.length === 0) {
+            sessionContainer.innerHTML = `<div class="loading-text">No active sessions.</div>`;
+            return;
+        }
 
         sessionContainer.innerHTML = "";
         sessions.forEach(sess => {
             const div = document.createElement("div");
             div.className = `session-item ${sess.id === currentSessionId ? 'active' : ''}`;
-            div.innerHTML = `<strong>${escapeHtml(sess.title)}</strong><br><small>${sess.character_name}</small>`;
-            div.onclick = () => switchSession(sess.id, div);
+
+            // Session info layout with delete button
+            div.innerHTML = `
+                <div class="session-info" style="flex: 1; cursor: pointer;">
+                    <strong>${escapeHtml(sess.title)}</strong><br><small>${sess.character_name}</small>
+                </div>
+                <button class="delete-session-btn" title="Delete Session" data-id="${sess.id}">✕</button>
+            `;
+
+            // Click body to switch session
+            div.querySelector(".session-info").onclick = () => switchSession(sess.id, div);
+
+            // Click delete button
+            div.querySelector(".delete-session-btn").onclick = (e) => {
+                e.stopPropagation();
+                deleteSession(sess.id);
+            };
+
             sessionContainer.appendChild(div);
         });
     } catch (err) {
         console.error("Failed to load sessions:", err);
+    }
+}
+
+async function deleteSession(sessionId) {
+    if (!confirm("Are you sure you want to delete this chat session?")) return;
+
+    try {
+        const res = await fetch(`/api/chat/sessions/${sessionId}`, {
+            method: "DELETE"
+        });
+
+        if (res.ok) {
+            if (currentSessionId === sessionId) {
+                currentSessionId = null;
+                document.getElementById("current-chat-title").innerText = "Select a character to start chatting";
+                document.getElementById("chat-messages").innerHTML = `
+                    <div class="welcome-banner">
+                        <h3>Welcome to Strawberry Social</h3>
+                        <p>Select a character card from your <code>/characters</code> folder using the sidebar to begin.</p>
+                    </div>
+                `;
+                document.getElementById("message-input").disabled = true;
+                document.getElementById("send-btn").disabled = true;
+            }
+            loadSessions();
+        }
+    } catch (err) {
+        console.error("Failed to delete session:", err);
     }
 }
 
@@ -133,7 +180,7 @@ async function handleSendMessage(e) {
             body: JSON.stringify({ content })
         });
         const data = await res.json();
-        
+
         // Append assistant response
         appendMessageToUI("assistant", data.assistant_message.content);
     } catch (err) {
@@ -148,7 +195,7 @@ async function handleSendMessage(e) {
 
 function appendMessageToUI(role, text) {
     const container = document.getElementById("chat-messages");
-    
+
     // Remove welcome banner if present
     const banner = container.querySelector(".welcome-banner");
     if (banner) banner.remove();
