@@ -1,8 +1,26 @@
+let appConfig = {};
 let currentSessionId = null;
 let currentActiveCharacter = null;
 let currentActiveCard = null;
 
+async function loadConfig() {
+    try {
+        const res = await fetch("/api/config");
+        appConfig = await res.json();
+
+        // Apply theme from config.yaml
+        if (appConfig.theme === "light") {
+            document.body.classList.add("light-theme");
+        } else {
+            document.body.classList.remove("light-theme");
+        }
+    } catch (err) {
+        console.error("Failed to load app config:", err);
+    }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
+    loadConfig();
     loadCharacters();
     loadSessions();
 

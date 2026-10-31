@@ -9,6 +9,18 @@
     --border: #2d2d35;
 }
 
+/* Light Theme Variable Overrides */
+body.light-theme {
+    --bg-primary: #f8fafc;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f1f5f9;
+    --accent: #dc2626;
+    --accent-hover: #b91c1c;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --border: #e2e8f0;
+}
+
 * {
     box-sizing: border-box;
     margin: 0;
@@ -445,4 +457,8 @@ body {
 .delete-session-btn:hover {
     color: #e06c75;
     background: rgba(224, 108, 117, 0.1);
+}
+
+.action-btn:hover, .roster-item:hover, .session-item:hover {
+    background-color: var(--border);
 }

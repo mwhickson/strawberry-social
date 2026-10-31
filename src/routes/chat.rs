@@ -182,8 +182,8 @@ async fn send_message(
         messages: llm_messages,
         temperature: _state.config.llm.temperature,
         top_p: _state.config.llm.top_p,
-        max_tokens: 512,
-        stream: false,
+        max_tokens: std::cmp::min(512, _state.config.llm.context_window),
+        stream: _state.config.ui.stream_responses,
     };
 
     let resp = llm_client
