@@ -121,7 +121,7 @@ llm:
 
 ui:
   theme: dark
-  stream_responses: true
+  stream_responses: false
 ```
 
 ### Configuration Options
@@ -133,7 +133,7 @@ ui:
 * **llm.default_model**: Model designation header string forwarded to the backend.
 * **llm.context_window**: Maximum token window length considered for context generation.
 * **ui.theme**: Interface color scheme (`dark` or `light`).
-* **ui.stream_responses**: Toggles streaming responses from the LLM backend.
+* **ui.stream_responses**: TODO: Toggles streaming responses from the LLM backend.
 
 ## Usage
 

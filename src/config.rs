@@ -50,7 +50,7 @@ impl Default for AppConfig {
             },
             ui: UiConfig {
                 theme: "dark".to_string(),
-                stream_responses: true,
+                stream_responses: false, // set a friendlier default
             },
         }
     }

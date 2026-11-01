@@ -11,4 +11,4 @@ llm:
   top_p: 0.9
 ui:
   theme: dark
-  stream_responses: true
+  stream_responses: false
