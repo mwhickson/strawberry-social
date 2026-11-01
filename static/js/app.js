@@ -227,8 +227,9 @@ async function handleSendMessage(e) {
     if (!content) return;
 
     input.value = "";
-    input.disabled = true;
-    document.getElementById("send-btn").disabled = true;
+
+    // Lock UI controls to prevent switching sessions mid-generation
+    setUiLocked(true);
 
     // Optimistically append user message
     appendMessageToUI("user", content);
@@ -247,9 +248,23 @@ async function handleSendMessage(e) {
         console.error("Failed to send message:", err);
         appendMessageToUI("assistant", "⚠️ Error: Failed to communicate with local LLM backend.");
     } finally {
-        input.disabled = false;
-        document.getElementById("send-btn").disabled = false;
+        // Unlock UI controls when generation completes
+        setUiLocked(false);
         input.focus();
+    }
+}
+
+function setUiLocked(isLocked) {
+    // Disable inputs
+    document.getElementById("message-input").disabled = isLocked;
+    document.getElementById("send-btn").disabled = isLocked;
+    document.getElementById("upload-btn").disabled = isLocked;
+
+    // Toggle pointer events on sidebars to block clicks during generation
+    const sidebar = document.querySelector(".sidebar");
+    if (sidebar) {
+        sidebar.style.pointerEvents = isLocked ? "none" : "auto";
+        sidebar.style.opacity = isLocked ? "0.6" : "1.0";
     }
 }
 
