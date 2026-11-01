@@ -167,6 +167,32 @@ async function switchSession(sessionId, element) {
     element.classList.add("active");
     currentSessionId = sessionId;
 
+    // Find the session object to map its character context
+    const sessionsRes = await fetch("/api/chat/sessions");
+    const sessions = await sessionsRes.json();
+    const currentSess = sessions.find(s => s.id === sessionId);
+
+    if (currentSess) {
+        document.getElementById("current-chat-title").innerText = `Chatting with ${currentSess.character_name}`;
+
+        // If we stored the card JSON in the session, parse it to restore the avatar & profile data
+        if (currentSess.character_card_json) {
+            try {
+                const cardData = JSON.parse(currentSess.character_card_json);
+                // Reconstruct a lightweight active character/card context
+                currentActiveCharacter = {
+                    name: currentSess.character_name,
+                    avatar_url: cardData.avatar_url || null // or check how your card json stores it
+                };
+                currentActiveCard = cardData;
+                currentActiveCard.name = currentSess.character_name;
+                document.getElementById("profile-btn").style.display = "inline-block";
+            } catch (e) {
+                console.error("Failed to parse session character card JSON", e);
+            }
+        }
+    }
+
     loadMessages(sessionId);
     document.getElementById("message-input").disabled = false;
     document.getElementById("send-btn").disabled = false;
