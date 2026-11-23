@@ -4,7 +4,8 @@ const THEME_KEY = "strawberry-social-theme-v1"; // Used only once to migrate the
 
 const state = {
     config: {}, characters: [], sessions: [], profiles: [], activeProfileId: null,
-    currentSessionId: null, currentCharacter: null, currentCard: null, editingProfileId: null
+    currentSessionId: null, currentCharacter: null, currentCard: null, editingProfileId: null,
+    runtimeInfoLoaded: false, runtimeInfoLoading: false
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -41,6 +42,7 @@ function navigate(view, updateHash = true) {
     });
     $$(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === view));
     if (updateHash && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
+    if (view === "settings" && !state.runtimeInfoLoaded) loadRuntimeInfo();
 }
 
 async function loadConfig() {
@@ -403,7 +405,43 @@ function bindSettings() {
             state.theme = theme; applyTheme(theme);
         } catch (error) { alert(`Could not save theme: ${error.message}`); event.target.value = state.theme; }
     });
+    $("#retry-runtime-info").addEventListener("click", () => loadRuntimeInfo(true));
 }
+
+async function loadRuntimeInfo(retry = false) {
+    if (state.runtimeInfoLoading || (state.runtimeInfoLoaded && !retry)) return;
+    state.runtimeInfoLoading = true;
+    const release = $("#runtime-release");
+    const status = $("#runtime-status");
+    const retryButton = $("#retry-runtime-info");
+    retryButton.hidden = true;
+    release.textContent = "Checking GitHub…";
+    status.textContent = "";
+    try {
+        const response = await fetch("/api/runtime-info");
+        if (!response.ok) throw new Error(await response.text());
+        const info = await response.json();
+        $("#runtime-platform").textContent = info.platform || "Unknown";
+        release.replaceChildren();
+        if (info.latest_version && info.release_url) {
+            const link = document.createElement("a");
+            link.href = info.release_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+            link.textContent = info.latest_version; link.setAttribute("aria-label", `llama.cpp ${info.latest_version} release notes (opens in a new tab)`);
+            release.append(link);
+            status.textContent = "Release information retrieved.";
+        } else {
+            release.textContent = "No stable vX.Y.Z release found.";
+            status.textContent = "The latest release list did not contain a matching stable version tag.";
+        }
+        state.runtimeInfoLoaded = true;
+    } catch (error) {
+        console.error("Could not retrieve llama.cpp release information:", error);
+        release.textContent = "Unavailable";
+        status.textContent = "Could not retrieve release information. Check your network connection and try again.";
+        retryButton.hidden = false;
+    } finally { state.runtimeInfoLoading = false; }
+}
+
 function applyTheme(theme) {
     document.body.classList.toggle("light-theme", theme === "light");
     const select = $("#theme-select"); if (select) select.value = theme === "light" ? "light" : "dark";
