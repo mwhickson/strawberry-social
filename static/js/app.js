@@ -839,7 +839,7 @@ async function loadRuntimeInfo(retry = false) {
             link.textContent = info.latest_version; link.setAttribute("aria-label", `llama.cpp ${info.latest_version} release notes (opens in a new tab)`);
             release.append(link);
             if (!info.asset_name) {
-                status.textContent = `Release ${info.latest_version} found. Built-in downloads are currently available on Linux x64 and ARM64 only.`;
+                status.textContent = `Release ${info.latest_version} found. Built-in downloads are currently available on Linux and Windows x64 and ARM64 only.`;
                 $("#download-runtime-btn").hidden = true;
             } else if (info.installed_runtime_tag === info.runtime_tag) {
                 status.textContent = `Runtime ${info.runtime_tag} is installed and passed its startup check.`;
@@ -849,7 +849,8 @@ async function loadRuntimeInfo(retry = false) {
                     ? `Runtime ${info.installed_runtime_tag} is installed. A newer CPU build is available.`
                     : "No managed runtime is installed yet.";
                 const downloadButton = $("#download-runtime-btn");
-                downloadButton.textContent = `Download Linux CPU runtime (${formatBytes(info.asset_size)})`;
+                const platform = (info.platform || "").split(" /")[0] || "CPU";
+                downloadButton.textContent = `Download ${platform} CPU runtime (${formatBytes(info.asset_size)})`;
                 downloadButton.hidden = false;
                 if (info.auto_download_runtime) downloadRuntime(true);
             }

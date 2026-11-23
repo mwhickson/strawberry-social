@@ -105,10 +105,10 @@ async fn start_server(
     State(state): State<Arc<AppState>>,
     Json(request): Json<StartServerRequest>,
 ) -> Result<Json<ServerActionResponse>, ServerError> {
-    if !cfg!(target_os = "linux") {
+    if !cfg!(target_os = "linux") && !cfg!(target_os = "windows") {
         return Err(ServerError(
             StatusCode::NOT_IMPLEMENTED,
-            "The managed llama.cpp server is currently supported on Linux only.".into(),
+            "The managed llama.cpp server is currently supported on Linux and Windows only.".into(),
         ));
     }
     let mut process = state.runtime_server.lock().await;

@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+#[cfg(not(target_os = "windows"))]
 use flate2::read::GzDecoder;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -8,6 +9,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
+#[cfg(not(target_os = "windows"))]
 use tar::Archive;
 use tokio::io::AsyncWriteExt;
 use tokio_stream::StreamExt;
@@ -47,7 +49,7 @@ async fn get_runtime_info(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<RuntimeInfo>, RuntimeError> {
     let platform = platform_label();
-    if !is_supported_linux_target() {
+    if !is_supported_cpu_target() {
         let (stable_version, stable_url, nightly_tag) = resolve_stable_release().await?;
         return Ok(Json(RuntimeInfo {
             platform,
@@ -60,7 +62,7 @@ async fn get_runtime_info(
             auto_download_runtime: read_auto_download_preference(&state.data_dir),
         }));
     }
-    let asset = resolve_linux_cpu_asset().await?;
+    let asset = resolve_cpu_asset().await?;
     Ok(Json(RuntimeInfo {
         platform,
         latest_version: Some(asset.stable_version),
@@ -83,24 +85,18 @@ struct DownloadResponse {
 async fn download_runtime(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<DownloadResponse>, RuntimeError> {
-    if !cfg!(target_os = "linux") {
-        return Err(RuntimeError(
-            StatusCode::NOT_IMPLEMENTED,
-            "Built-in runtime downloads are currently available on Linux only.".into(),
-        ));
-    }
-    if !matches!(std::env::consts::ARCH, "x86_64" | "aarch64") {
+    if !is_supported_cpu_target() {
         return Err(RuntimeError(
             StatusCode::NOT_IMPLEMENTED,
             format!(
-                "Linux {} runtime downloads are not available yet.",
-                std::env::consts::ARCH
+                "Built-in runtime downloads are not available for {} yet.",
+                platform_label()
             ),
         ));
     }
 
     let _guard = state.runtime_download_lock.clone().lock_owned().await;
-    let asset = resolve_linux_cpu_asset().await?;
+    let asset = resolve_cpu_asset().await?;
     let root = state.data_dir.join("llama.cpp");
     let versions_dir = root.join("versions");
     fs::create_dir_all(&versions_dir).map_err(RuntimeError::internal)?;
@@ -146,19 +142,7 @@ async fn install_staged_runtime(
 
     let extracted = stage.join("extracted");
     fs::create_dir_all(&extracted).map_err(RuntimeError::internal)?;
-    let archive_for_extract = archive_path.clone();
-    let extracted_for_extract = extracted.clone();
-    tokio::task::spawn_blocking(move || {
-        let file = fs::File::open(archive_for_extract).map_err(RuntimeError::internal)?;
-        let decoder = GzDecoder::new(file);
-        let mut archive = Archive::new(decoder);
-        archive
-            .unpack(&extracted_for_extract)
-            .map_err(RuntimeError::internal)?;
-        Ok::<(), RuntimeError>(())
-    })
-    .await
-    .map_err(RuntimeError::internal)??;
+    extract_runtime_archive(&archive_path, &extracted).await?;
 
     let server_path = find_server_binary(&extracted)?;
     make_executable(&server_path)?;
@@ -252,8 +236,8 @@ async fn download_and_verify(asset: &RuntimeAsset, destination: &Path) -> Result
     Ok(())
 }
 
-async fn resolve_linux_cpu_asset() -> Result<RuntimeAsset, RuntimeError> {
-    if !is_supported_linux_target() {
+async fn resolve_cpu_asset() -> Result<RuntimeAsset, RuntimeError> {
+    if !is_supported_cpu_target() {
         return Err(RuntimeError(
             StatusCode::NOT_IMPLEMENTED,
             format!(
@@ -276,11 +260,15 @@ async fn resolve_linux_cpu_asset() -> Result<RuntimeAsset, RuntimeError> {
         .json()
         .await
         .map_err(RuntimeError::upstream)?;
-    let expected_asset = match std::env::consts::ARCH {
-        "x86_64" => format!("llama-{nightly_tag}-bin-ubuntu-x64.tar.gz"),
-        "aarch64" => format!("llama-{nightly_tag}-bin-ubuntu-arm64.tar.gz"),
-        _ => unreachable!(),
-    };
+    let expected_asset = cpu_asset_name(&nightly_tag).ok_or_else(|| {
+        RuntimeError(
+            StatusCode::NOT_IMPLEMENTED,
+            format!(
+                "No built-in CPU runtime archive is configured for {}.",
+                platform_label()
+            ),
+        )
+    })?;
     let asset = nightly
         .get("assets")
         .and_then(serde_json::Value::as_array)
@@ -292,9 +280,7 @@ async fn resolve_linux_cpu_asset() -> Result<RuntimeAsset, RuntimeError> {
         .ok_or_else(|| {
             RuntimeError(
                 StatusCode::BAD_GATEWAY,
-                format!(
-                    "The linked nightly release has no Linux CPU archive named {expected_asset}."
-                ),
+                format!("The linked nightly release has no CPU archive named {expected_asset}."),
             )
         })?;
     let digest = asset
@@ -305,7 +291,7 @@ async fn resolve_linux_cpu_asset() -> Result<RuntimeAsset, RuntimeError> {
         .ok_or_else(|| {
             RuntimeError(
                 StatusCode::BAD_GATEWAY,
-                "GitHub did not provide a SHA-256 digest for the Linux CPU archive.".into(),
+                "GitHub did not provide a SHA-256 digest for the CPU archive.".into(),
             )
         })?;
 
@@ -381,8 +367,65 @@ async fn resolve_stable_release() -> Result<(String, String, String), RuntimeErr
     Ok((stable_tag.to_owned(), stable_url, nightly_tag))
 }
 
-fn is_supported_linux_target() -> bool {
-    cfg!(target_os = "linux") && matches!(std::env::consts::ARCH, "x86_64" | "aarch64")
+fn is_supported_cpu_target() -> bool {
+    (cfg!(target_os = "linux") || cfg!(target_os = "windows"))
+        && matches!(std::env::consts::ARCH, "x86_64" | "aarch64")
+}
+
+fn cpu_asset_name(tag: &str) -> Option<String> {
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "x64",
+        "aarch64" => "arm64",
+        _ => return None,
+    };
+    #[cfg(target_os = "linux")]
+    {
+        Some(format!("llama-{tag}-bin-ubuntu-{arch}.tar.gz"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Some(format!("llama-{tag}-bin-win-cpu-{arch}.zip"))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = (tag, arch);
+        None
+    }
+}
+
+async fn extract_runtime_archive(
+    archive_path: &Path,
+    destination: &Path,
+) -> Result<(), RuntimeError> {
+    #[cfg(target_os = "windows")]
+    {
+        let archive_path = archive_path.to_path_buf();
+        let destination = destination.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            use std::process::Command;
+            let status = Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-Command", "Expand-Archive -LiteralPath $env:STRAWBERRY_ARCHIVE -DestinationPath $env:STRAWBERRY_EXTRACT -Force; Get-ChildItem -LiteralPath $env:STRAWBERRY_EXTRACT -Recurse -File | Unblock-File"])
+                .env("STRAWBERRY_ARCHIVE", archive_path)
+                .env("STRAWBERRY_EXTRACT", destination)
+                .status().map_err(RuntimeError::internal)?;
+            if !status.success() { return Err(RuntimeError(StatusCode::BAD_GATEWAY, "Windows could not extract the verified runtime archive.".into())); }
+            Ok::<(), RuntimeError>(())
+        }).await.map_err(RuntimeError::internal)??;
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let archive_path = archive_path.to_path_buf();
+        let destination = destination.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let file = fs::File::open(archive_path).map_err(RuntimeError::internal)?;
+            Archive::new(GzDecoder::new(file))
+                .unpack(destination)
+                .map_err(RuntimeError::internal)
+        })
+        .await
+        .map_err(RuntimeError::internal)??;
+    }
+    Ok(())
 }
 
 fn extract_nightly_tag(body: &str) -> Option<String> {
@@ -429,7 +472,13 @@ fn find_server_binary(root: &Path) -> Result<PathBuf, RuntimeError> {
                 if let Some(found) = walk(&item) {
                     return Some(found);
                 }
-            } else if item.file_name().and_then(|name| name.to_str()) == Some("llama-server") {
+            } else if item.file_name().and_then(|name| name.to_str())
+                == Some(if cfg!(target_os = "windows") {
+                    "llama-server.exe"
+                } else {
+                    "llama-server"
+                })
+            {
                 return Some(item);
             }
         }
@@ -444,6 +493,8 @@ fn find_server_binary(root: &Path) -> Result<PathBuf, RuntimeError> {
 }
 
 pub(crate) fn ensure_library_soname_links(server_path: &Path) -> std::io::Result<()> {
+    #[cfg(not(unix))]
+    let _ = server_path;
     #[cfg(unix)]
     {
         let Some(directory) = server_path.parent() else {
