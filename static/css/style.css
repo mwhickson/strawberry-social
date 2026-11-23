@@ -523,3 +523,6 @@ body.light-theme { --bg-primary: #f5f4f6; --bg-secondary: #fff; --bg-tertiary: #
 .installed-model-actions { grid-column: 1 / -1; justify-self: end; }
 @media (max-width: 560px) { .model-result, .installed-model { align-items: center; flex-direction: initial; }.model-result-actions, .installed-model-actions { width: auto; } }
 .model-browser-panel #mmproj-toggle-row[hidden], .model-browser-panel #mmproj-label[hidden], .model-browser-panel #selected-mmproj-file[hidden] { display: none !important; }
+.model-browser-filters { grid-template-columns: minmax(170px, 1.3fr) minmax(135px, .9fr) minmax(135px, .9fr) auto; margin: 0; }
+.model-browser-filters input[type="search"] { margin-top: 6px; }
+@media (max-width: 650px) { .model-browser-filters { grid-template-columns: 1fr 1fr; } .model-browser-filters label:first-child { grid-column: 1 / -1; } }

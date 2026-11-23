@@ -44,6 +44,7 @@ pub fn router() -> Router<Arc<AppState>> {
 struct SearchQuery {
     min: Option<String>,
     max: Option<String>,
+    search: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -62,8 +63,19 @@ async fn search_models(
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<Vec<HubModel>>, ModelError> {
     let range = parameter_range(query.min.as_deref(), query.max.as_deref())?;
-    let trending_url = model_search_url(range.as_deref(), "trendingScore");
-    let downloads_url = model_search_url(range.as_deref(), "downloads");
+    let search = query
+        .search
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if search.is_some_and(|value| value.chars().count() > 100) {
+        return Err(ModelError(
+            StatusCode::BAD_REQUEST,
+            "Search text must be 100 characters or fewer.".into(),
+        ));
+    }
+    let trending_url = model_search_url(range.as_deref(), search, "trendingScore");
+    let downloads_url = model_search_url(range.as_deref(), search, "downloads");
     let (trending, downloads) = tokio::join!(
         fetch_hub_models(trending_url),
         fetch_hub_models(downloads_url)
@@ -144,7 +156,7 @@ fn parameter_range(min: Option<&str>, max: Option<&str>) -> Result<Option<String
     }
 }
 
-fn model_search_url(range: Option<&str>, sort: &str) -> reqwest::Url {
+fn model_search_url(range: Option<&str>, search: Option<&str>, sort: &str) -> reqwest::Url {
     let mut url = reqwest::Url::parse(&format!("{HUB_API}/models")).expect("valid Hub API URL");
     {
         let mut query = url.query_pairs_mut();
@@ -163,6 +175,9 @@ fn model_search_url(range: Option<&str>, sort: &str) -> reqwest::Url {
             .append_pair("expand[]", "sha");
         if let Some(range) = range {
             query.append_pair("num_parameters", range);
+        }
+        if let Some(search) = search {
+            query.append_pair("search", search);
         }
     }
     url

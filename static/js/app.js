@@ -460,7 +460,10 @@ async function saveGenerationSettings(event) {
 }
 
 function bindModelControls() {
-    $("#search-models-btn").addEventListener("click", () => loadHubModels(true));
+    $("#model-search-form").addEventListener("submit", event => {
+        event.preventDefault();
+        loadHubModels(true);
+    });
     $("#close-model-files-btn").addEventListener("click", () => { $("#model-download-panel").hidden = true; });
     $("#include-mmproj").addEventListener("change", updateMmprojSelection);
     $("#start-model-download-btn").addEventListener("click", startModelDownload);
@@ -476,18 +479,24 @@ async function loadHubModels(force = false) {
     const results = $("#model-search-results");
     const min = $("#model-min-parameters").value;
     const max = $("#model-max-parameters").value;
-    status.textContent = "Loading trending and popular Hugging Face models…";
+    const search = $("#model-search-text").value.trim();
+    status.textContent = search
+        ? `Searching Hugging Face for “${search}”…`
+        : "Loading trending and popular Hugging Face models…";
     results.replaceChildren();
     try {
         const query = new URLSearchParams();
         if (min !== "any") query.set("min", min);
         if (max !== "any") query.set("max", max);
+        if (search) query.set("search", search);
         const response = await fetch(`/api/models/search?${query}`);
         if (!response.ok) throw new Error(await response.text());
         const models = await response.json();
         state.modelBrowserLoaded = true;
         renderHubModels(models);
-        status.textContent = `${models.length} models · trending first, then additional results from downloads.`;
+        status.textContent = search
+            ? `${models.length} results for “${search}” · trending first, then additional results from downloads.`
+            : `${models.length} models · trending first, then additional results from downloads.`;
     } catch (error) {
         status.textContent = `Could not load Hugging Face models: ${error.message}`;
         const retry = document.createElement("button");
@@ -501,7 +510,7 @@ function renderHubModels(models) {
     const container = $("#model-search-results");
     container.replaceChildren();
     if (!models.length) {
-        container.append(emptyState("No matching GGUF models", "Try a wider parameter range or refresh the search."));
+        container.append(emptyState("No matching GGUF models", "Try another model or provider name, or widen the parameter range."));
         return;
     }
     models.forEach(model => {

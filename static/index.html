@@ -84,11 +84,12 @@
                 <div class="settings-sections model-sections">
                     <section class="panel settings-panel model-browser-panel">
                         <div><h2>Browse Hugging Face GGUF models</h2><p>Explore trending llama.cpp compatible text-generation models, then choose a quantization and optional vision projector.</p></div>
-                        <div class="model-browser-filters">
+                        <form id="model-search-form" class="model-browser-filters">
+                            <label>Model or provider<input class="text-field" id="model-search-text" type="search" placeholder="e.g. Gemma or google" autocomplete="off"></label>
                             <label>Minimum parameters<select class="text-field" id="model-min-parameters"><option value="0">0</option><option value="3B" selected>3B</option><option value="6B">6B</option><option value="9B">9B</option><option value="12B">12B</option><option value="24B">24B</option><option value="32B">32B</option><option value="64B">64B</option><option value="128B">128B</option><option value="256B">256B</option></select></label>
                             <label>Maximum parameters<select class="text-field" id="model-max-parameters"><option value="any">No maximum (&gt;500B)</option><option value="0">0</option><option value="3B">3B</option><option value="6B">6B</option><option value="9B" selected>9B</option><option value="12B">12B</option><option value="24B">24B</option><option value="32B">32B</option><option value="64B">64B</option><option value="128B">128B</option><option value="256B">256B</option></select></label>
-                            <button id="search-models-btn" class="primary-button" type="button">Find models</button>
-                        </div>
+                            <button id="search-models-btn" class="primary-button" type="submit">Find models</button>
+                        </form>
                         <p id="model-browser-status" class="field-hint" role="status" aria-live="polite">Loading Hugging Face models…</p>
                         <section id="model-download-panel" class="model-download-panel" hidden aria-label="Choose model files">
                             <div><span class="eyebrow">FILE SELECTION</span><h2 id="selected-repo-title" tabindex="-1">Choose model files</h2><p id="selected-repo-description" class="field-hint"></p></div>
