@@ -20,6 +20,9 @@ serde_yaml = "0.9"
 # HTTP Client (using rustls-tls to avoid OpenSSL system requirements)
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 tokio-stream = "0.1"
+flate2 = "1.0"
+tar = "0.4"
+sha2 = "0.10"
 
 # Database & Memory
 rusqlite = { version = "0.31", features = ["bundled"] }

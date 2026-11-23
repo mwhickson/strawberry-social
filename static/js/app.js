@@ -35,6 +35,7 @@ function bindNavigation() {
 
 function navigate(view, updateHash = true) {
     if (!["chat", "profiles", "settings"].includes(view)) view = "chat";
+    if (view !== "settings") state.runtimeInfoLoaded = false;
     $$(".app-view").forEach(section => {
         const active = section.id === `view-${view}`;
         section.hidden = !active;
@@ -406,6 +407,20 @@ function bindSettings() {
         } catch (error) { alert(`Could not save theme: ${error.message}`); event.target.value = state.theme; }
     });
     $("#retry-runtime-info").addEventListener("click", () => loadRuntimeInfo(true));
+    $("#download-runtime-btn").addEventListener("click", () => downloadRuntime(false));
+    $("#auto-download-runtime").addEventListener("change", async event => {
+        const enabled = event.target.checked;
+        try {
+            const response = await fetch("/api/preferences/auto-download", {
+                method: "PUT", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled })
+            });
+            if (!response.ok) throw new Error(await response.text());
+        } catch (error) {
+            event.target.checked = !enabled;
+            alert(`Could not save the download preference: ${error.message}`);
+        }
+    });
 }
 
 async function loadRuntimeInfo(retry = false) {
@@ -422,13 +437,31 @@ async function loadRuntimeInfo(retry = false) {
         if (!response.ok) throw new Error(await response.text());
         const info = await response.json();
         $("#runtime-platform").textContent = info.platform || "Unknown";
+        $("#auto-download-runtime").checked = !!info.auto_download_runtime;
+        $("#runtime-asset").textContent = info.asset_name
+            ? `${info.asset_name} (${formatBytes(info.asset_size)})`
+            : "Not available for this platform yet";
         release.replaceChildren();
         if (info.latest_version && info.release_url) {
             const link = document.createElement("a");
             link.href = info.release_url; link.target = "_blank"; link.rel = "noopener noreferrer";
             link.textContent = info.latest_version; link.setAttribute("aria-label", `llama.cpp ${info.latest_version} release notes (opens in a new tab)`);
             release.append(link);
-            status.textContent = "Release information retrieved.";
+            if (!info.asset_name) {
+                status.textContent = `Release ${info.latest_version} found. Built-in downloads are currently available on Linux x64 and ARM64 only.`;
+                $("#download-runtime-btn").hidden = true;
+            } else if (info.installed_runtime_tag === info.runtime_tag) {
+                status.textContent = `Runtime ${info.runtime_tag} is installed and passed its startup check.`;
+                $("#download-runtime-btn").hidden = true;
+            } else {
+                status.textContent = info.installed_runtime_tag
+                    ? `Runtime ${info.installed_runtime_tag} is installed. A newer CPU build is available.`
+                    : "No managed runtime is installed yet.";
+                const downloadButton = $("#download-runtime-btn");
+                downloadButton.textContent = `Download Linux CPU runtime (${formatBytes(info.asset_size)})`;
+                downloadButton.hidden = false;
+                if (info.auto_download_runtime) downloadRuntime(true);
+            }
         } else {
             release.textContent = "No stable vX.Y.Z release found.";
             status.textContent = "The latest release list did not contain a matching stable version tag.";
@@ -440,6 +473,38 @@ async function loadRuntimeInfo(retry = false) {
         status.textContent = "Could not retrieve release information. Check your network connection and try again.";
         retryButton.hidden = false;
     } finally { state.runtimeInfoLoading = false; }
+}
+
+async function downloadRuntime(automatic) {
+    const button = $("#download-runtime-btn");
+    const retry = $("#retry-runtime-info");
+    button.disabled = true;
+    retry.hidden = true;
+    $("#runtime-status").textContent = automatic
+        ? "Automatically downloading the approved runtime update…"
+        : "Downloading, verifying, extracting, and checking llama-server. This may take a few minutes…";
+    try {
+        const response = await fetch("/api/runtime-info/download", { method: "POST" });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        $("#runtime-status").textContent = `Installed and verified ${result.runtime_tag}. The runtime is ready for model setup.`;
+        state.runtimeInfoLoaded = false;
+        await loadRuntimeInfo(true);
+    } catch (error) {
+        console.error("Runtime installation failed:", error);
+        $("#runtime-status").textContent = `Download or verification failed: ${error.message}`;
+        button.textContent = "Retry runtime download";
+        button.hidden = false;
+        retry.hidden = true;
+    } finally { button.disabled = false; }
+}
+
+function formatBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "size unavailable";
+    const units = ["B", "KB", "MB", "GB"];
+    let value = bytes; let index = 0;
+    while (value >= 1024 && index < units.length - 1) { value /= 1024; index += 1; }
+    return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
 function applyTheme(theme) {

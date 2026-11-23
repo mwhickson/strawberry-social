@@ -28,6 +28,7 @@ struct Asset;
 pub struct AppState {
     pub config: AppConfig,
     pub data_dir: PathBuf,
+    pub runtime_download_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[tokio::main]
@@ -70,6 +71,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
         config: config.clone(),
         data_dir: data_dir.to_path_buf(),
+        runtime_download_lock: Arc::new(tokio::sync::Mutex::new(())),
     });
 
     // Build Axum router combining API routes, config, and static asset fallback
