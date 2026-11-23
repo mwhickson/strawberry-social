@@ -13,6 +13,7 @@
             <nav class="primary-nav" aria-label="Main navigation">
                 <button class="nav-item active" data-view="chat"><span>▤</span> Chats</button>
                 <button class="nav-item" data-view="profiles"><span>◉</span> Profiles</button>
+                <button class="nav-item" data-view="models"><span>▣</span> Models</button>
                 <button class="nav-item" data-view="settings"><span>⚙</span> Settings</button>
             </nav>
             <div class="sidebar-section-heading"><span>CHARACTERS</span><button id="upload-btn" class="icon-button" title="Upload character card">＋</button></div>
@@ -47,6 +48,17 @@
                         <label class="field-label" for="theme-select">Theme</label>
                         <select class="text-field" id="theme-select"><option value="dark">Dark</option><option value="light">Light</option></select>
                     </section>
+                    <form id="generation-settings-form" class="panel settings-panel generation-settings-panel">
+                        <div><span class="eyebrow">CHAT GENERATION</span><h2>Response settings</h2><p>Choose how much context the model can use and how varied its replies should be.</p></div>
+                        <label class="field-label" for="context-window">Context window (tokens)</label>
+                        <input class="text-field" id="context-window" type="number" min="256" max="262144" step="256" required>
+                        <p class="field-hint">The number of tokens the model can consider at once, including conversation history. Larger values use more memory. Takes effect the next time llama.cpp starts.</p>
+                        <div class="generation-field-grid">
+                            <div><label class="field-label" for="temperature">Temperature</label><input class="text-field" id="temperature" type="number" min="0" max="2" step="0.05" required><p class="field-hint">Controls randomness. Lower values are more predictable; higher values add variety.</p></div>
+                            <div><label class="field-label" for="top-p">Top-p</label><input class="text-field" id="top-p" type="number" min="0.01" max="1" step="0.01" required><p class="field-hint">Limits choices to the most likely tokens whose combined probability reaches this value. Lower values are more focused.</p></div>
+                        </div>
+                        <div class="form-actions"><span id="generation-settings-status" class="field-hint" role="status" aria-live="polite"></span><button class="primary-button" type="submit">Save response settings</button></div>
+                    </form>
                     <section class="panel settings-panel runtime-panel">
                         <div><span class="eyebrow">LOCAL INFERENCE</span><h2>llama.cpp runtime</h2><p>Check the latest stable llama.cpp release for this platform.</p></div>
                         <div class="runtime-details">
@@ -59,18 +71,27 @@
                         <button id="retry-runtime-info" class="secondary-button" type="button" hidden>Retry release check</button>
                         <label class="runtime-auto-download"><input id="auto-download-runtime" type="checkbox"><span><strong>Automatically download runtime updates</strong><small>Allows Strawberry Social to download a newer runtime when you open Settings.</small></span></label>
                     </section>
+                    <section class="panel settings-panel">
+                        <div><h2>Inference connection</h2><p>The managed server listens on the loopback address and port configured here.</p></div>
+                        <label class="field-label" for="api-base-url">API base URL</label><input class="text-field" id="api-base-url" type="url" readonly>
+                        <p class="field-hint">Connection settings are currently managed in config.yaml.</p>
+                    </section>
+                </div>
+            </section>
+
+            <section id="view-models" class="app-view content-view" aria-label="Models" hidden>
+                <header class="view-header"><div><span class="eyebrow">MODEL LIBRARY</span><h1>Models</h1><p class="view-description">Find llama.cpp compatible GGUF models on Hugging Face, or manage models you have downloaded.</p></div></header>
+                <div class="settings-sections model-sections">
                     <section class="panel settings-panel model-browser-panel">
-                        <div><span class="eyebrow">MODEL LIBRARY</span><h2>Browse Hugging Face GGUF models</h2><p>Explore trending llama.cpp compatible text-generation models, then choose a quantization and optional vision projector.</p></div>
+                        <div><h2>Browse Hugging Face GGUF models</h2><p>Explore trending llama.cpp compatible text-generation models, then choose a quantization and optional vision projector.</p></div>
                         <div class="model-browser-filters">
                             <label>Minimum parameters<select class="text-field" id="model-min-parameters"><option value="0">0</option><option value="3B" selected>3B</option><option value="6B">6B</option><option value="9B">9B</option><option value="12B">12B</option><option value="24B">24B</option><option value="32B">32B</option><option value="64B">64B</option><option value="128B">128B</option><option value="256B">256B</option></select></label>
                             <label>Maximum parameters<select class="text-field" id="model-max-parameters"><option value="any">No maximum (&gt;500B)</option><option value="0">0</option><option value="3B">3B</option><option value="6B">6B</option><option value="9B" selected>9B</option><option value="12B">12B</option><option value="24B">24B</option><option value="32B">32B</option><option value="64B">64B</option><option value="128B">128B</option><option value="256B">256B</option></select></label>
                             <button id="search-models-btn" class="primary-button" type="button">Find models</button>
                         </div>
                         <p id="model-browser-status" class="field-hint" role="status" aria-live="polite">Loading Hugging Face models…</p>
-                        <div id="model-search-results" class="model-search-results"></div>
-                        <div class="installed-models-section"><h3>Downloaded models</h3><div id="installed-models" class="installed-model-list"><p class="field-hint">Checking your models folder…</p></div></div>
                         <section id="model-download-panel" class="model-download-panel" hidden aria-label="Choose model files">
-                            <div><span class="eyebrow">FILE SELECTION</span><h3 id="selected-repo-title">Choose model files</h3><p id="selected-repo-description" class="field-hint"></p></div>
+                            <div><span class="eyebrow">FILE SELECTION</span><h2 id="selected-repo-title" tabindex="-1">Choose model files</h2><p id="selected-repo-description" class="field-hint"></p></div>
                             <label class="field-label" for="selected-model-file">Model GGUF · quantization · file size</label>
                             <select class="text-field" id="selected-model-file"></select>
                             <label id="mmproj-toggle-row" class="mmproj-toggle" hidden><input id="include-mmproj" type="checkbox"><span><strong>Include vision projector</strong><small>Required for image input on multimodal models. Downloads an additional file.</small></span></label>
@@ -84,11 +105,8 @@
                             <p id="download-progress-detail" class="field-hint"></p>
                             <div class="model-actions"><button id="pause-model-download-btn" class="secondary-button" type="button">Pause</button><button id="resume-model-download-btn" class="secondary-button" type="button" hidden>Resume</button><button id="cancel-model-download-btn" class="danger-button" type="button">Cancel download</button></div>
                         </section>
-                    </section>
-                    <section class="panel settings-panel">
-                        <div><h2>Inference connection</h2><p>The managed server listens on the loopback address and port configured here.</p></div>
-                        <label class="field-label" for="api-base-url">API base URL</label><input class="text-field" id="api-base-url" type="url" readonly>
-                        <p class="field-hint">Connection settings are currently managed in config.yaml.</p>
+                        <div id="model-search-results" class="model-search-results" aria-label="Hugging Face model results"></div>
+                        <div class="installed-models-section"><h2>Downloaded models</h2><div id="installed-models" class="installed-model-list"><p class="field-hint">Checking your models folder…</p></div></div>
                     </section>
                 </div>
             </section>

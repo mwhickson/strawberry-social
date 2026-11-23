@@ -30,6 +30,7 @@ struct Asset;
 
 pub struct AppState {
     pub config: AppConfig,
+    pub generation: Arc<tokio::sync::RwLock<config::GenerationSettings>>,
     pub data_dir: PathBuf,
     pub runtime_download_lock: Arc<tokio::sync::Mutex<()>>,
     pub model_download: Arc<tokio::sync::Mutex<Option<routes::models::DownloadJob>>>,
@@ -104,6 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::load_or_create(&config_path)?;
     let state = Arc::new(AppState {
         config: config.clone(),
+        generation: Arc::new(tokio::sync::RwLock::new((&config.llm).into())),
         data_dir: data_dir.to_path_buf(),
         runtime_download_lock: Arc::new(tokio::sync::Mutex::new(())),
         model_download: Arc::new(tokio::sync::Mutex::new(None)),

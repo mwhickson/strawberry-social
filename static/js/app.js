@@ -35,11 +35,11 @@ function bindNavigation() {
     $$(".nav-item").forEach(button => button.addEventListener("click", () => navigate(button.dataset.view)));
     window.addEventListener("hashchange", () => navigate(location.hash.slice(1) || "chat", false));
     const initial = location.hash.slice(1);
-    if (["chat", "profiles", "settings"].includes(initial)) navigate(initial, false);
+    if (["chat", "profiles", "models", "settings"].includes(initial)) navigate(initial, false);
 }
 
 function navigate(view, updateHash = true) {
-    if (!["chat", "profiles", "settings"].includes(view)) view = "chat";
+    if (!["chat", "profiles", "models", "settings"].includes(view)) view = "chat";
     if (view !== "settings") state.runtimeInfoLoaded = false;
     $$(".app-view").forEach(section => {
         const active = section.id === `view-${view}`;
@@ -50,6 +50,8 @@ function navigate(view, updateHash = true) {
     if (updateHash && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
     if (view === "settings") {
         if (!state.runtimeInfoLoaded) loadRuntimeInfo();
+    }
+    if (view === "models") {
         if (!state.modelBrowserLoaded) loadHubModels();
         loadInstalledModels();
     }
@@ -61,6 +63,9 @@ async function loadConfig() {
         if (!response.ok) throw new Error(await response.text());
         state.config = await response.json();
         $("#api-base-url").value = state.config.api_base_url || "";
+        $("#context-window").value = state.config.context_window ?? 4096;
+        $("#temperature").value = Number(state.config.temperature ?? 0.7).toFixed(2);
+        $("#top-p").value = Number(state.config.top_p ?? 0.9).toFixed(2);
     } catch (error) { console.error("Failed to load settings:", error); }
 }
 
@@ -430,6 +435,28 @@ function bindSettings() {
             alert(`Could not save the download preference: ${error.message}`);
         }
     });
+    $("#generation-settings-form").addEventListener("submit", saveGenerationSettings);
+}
+
+async function saveGenerationSettings(event) {
+    event.preventDefault();
+    const payload = {
+        context_window: Number($("#context-window").value),
+        temperature: Number($("#temperature").value),
+        top_p: Number($("#top-p").value)
+    };
+    const status = $("#generation-settings-status");
+    status.textContent = "Saving…";
+    try {
+        const response = await fetch("/api/config/generation", {
+            method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        Object.assign(state.config, payload);
+        status.textContent = "Response settings saved.";
+    } catch (error) {
+        status.textContent = `Could not save response settings: ${error.message}`;
+    }
 }
 
 function bindModelControls() {
@@ -482,9 +509,9 @@ function renderHubModels(models) {
         const main = document.createElement("div"); main.className = "model-result-main";
         const name = document.createElement("h3"); name.textContent = model.repo_id;
         const meta = document.createElement("div"); meta.className = "model-result-meta";
-        meta.append(document.createTextNode(formatParameterCount(model.parameter_count, model.parameter_count_estimated)));
-        meta.append(document.createTextNode(`Updated ${formatModelDate(model.last_updated)}`));
-        if (Number.isFinite(model.downloads)) meta.append(document.createTextNode(`${formatCount(model.downloads)} downloads`));
+        meta.append(modelMetaItem(formatParameterCount(model.parameter_count, model.parameter_count_estimated)));
+        meta.append(modelMetaItem(`Updated ${formatModelDate(model.last_updated)}`));
+        if (Number.isFinite(model.downloads)) meta.append(modelMetaItem(`${formatCount(model.downloads)} downloads`));
         main.append(name, meta);
         const link = document.createElement("a"); link.href = model.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "View on Hugging Face ↗";
         const actions = document.createElement("div"); actions.className = "model-result-actions";
@@ -498,12 +525,20 @@ function renderHubModels(models) {
     });
 }
 
+function modelMetaItem(text) {
+    const item = document.createElement("span");
+    item.textContent = text;
+    return item;
+}
+
 async function loadModelFiles(model) {
     const panel = $("#model-download-panel");
     const description = $("#selected-repo-description");
     panel.hidden = false;
     $("#selected-repo-title").textContent = model.repo_id;
     description.textContent = "Loading available GGUF files and sizes…";
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    $("#selected-repo-title").focus({ preventScroll: true });
     try {
         const response = await fetch(`/api/models/files?repo_id=${encodeURIComponent(model.repo_id)}`);
         if (!response.ok) throw new Error(await response.text());
@@ -628,12 +663,12 @@ function renderInstalledModels() {
         const main = document.createElement("div"); main.className = "installed-model-main";
         const title = document.createElement("h4"); title.textContent = model.repo_id;
         const meta = document.createElement("div"); meta.className = "installed-model-meta";
-        meta.append(document.createTextNode(`${model.files.length} GGUF ${model.files.length === 1 ? "file" : "files"}`));
-        meta.append(document.createTextNode(formatBytes(model.size)));
-        meta.append(document.createTextNode(model.active ? `Loaded: ${model.model_file || "model"}` : "Not loaded"));
+        meta.append(modelMetaItem(`${model.files.length} GGUF ${model.files.length === 1 ? "file" : "files"}`));
+        meta.append(modelMetaItem(formatBytes(model.size)));
+        meta.append(modelMetaItem(model.active ? `Loaded: ${model.model_file || "model"}` : "Not loaded"));
         const externalServer = !!state.serverStatus && state.serverStatus.state !== "offline" && !state.serverStatus.managed;
-        if (model.active) meta.append(document.createTextNode("Stop or switch models before deleting."));
-        else if (externalServer) meta.append(document.createTextNode("Stop the external server before deleting downloaded models."));
+        if (model.active) meta.append(modelMetaItem("Stop or switch models before deleting."));
+        else if (externalServer) meta.append(modelMetaItem("Stop the external server before deleting downloaded models."));
         main.append(title, meta);
         const actions = document.createElement("div"); actions.className = "installed-model-actions";
         const run = document.createElement("button"); run.type = "button"; run.className = "primary-button";

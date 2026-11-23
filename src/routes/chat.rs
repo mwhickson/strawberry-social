@@ -264,6 +264,7 @@ async fn send_message(
         });
     }
 
+    let generation = *state.generation.read().await;
     let llm_client = LlmClient::new(
         state.config.llm.api_base_url.clone(),
         state.config.llm.api_key.clone(),
@@ -272,9 +273,9 @@ async fn send_message(
     let llm_req = ChatCompletionRequest {
         model: state.config.llm.default_model.clone(),
         messages: llm_messages,
-        temperature: state.config.llm.temperature,
-        top_p: state.config.llm.top_p,
-        max_tokens: std::cmp::min(512, state.config.llm.context_window),
+        temperature: generation.temperature,
+        top_p: generation.top_p,
+        max_tokens: std::cmp::min(512, generation.context_window),
         stream: false,
     };
 

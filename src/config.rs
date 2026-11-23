@@ -26,6 +26,23 @@ pub struct LlmConfig {
     pub top_p: f32,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct GenerationSettings {
+    pub context_window: usize,
+    pub temperature: f32,
+    pub top_p: f32,
+}
+
+impl From<&LlmConfig> for GenerationSettings {
+    fn from(config: &LlmConfig) -> Self {
+        Self {
+            context_window: config.context_window,
+            temperature: config.temperature,
+            top_p: config.top_p,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UiConfig {
     pub theme: String,

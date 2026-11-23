@@ -499,3 +499,27 @@ body.light-theme { --bg-primary: #f5f4f6; --bg-secondary: #fff; --bg-tertiary: #
 .action-btn:hover, .roster-item:hover, .session-item:hover {
     background-color: var(--border);
 }
+
+/* Model library layout and generation settings */
+.model-sections { max-width: 980px; margin: 0 auto; }
+.model-search-results { max-height: min(68vh, 720px); overflow-y: auto; overscroll-behavior: contain; padding: 2px 6px 2px 0; scrollbar-gutter: stable; }
+.model-result-meta, .installed-model-meta { gap: 7px; row-gap: 7px; line-height: 1.4; }
+.model-result-meta span, .installed-model-meta span { display: inline-flex; max-width: 100%; padding: 4px 7px; border-radius: 5px; background: var(--bg-tertiary); overflow-wrap: anywhere; }
+.model-result-meta span { flex: 0 1 auto; }
+.installed-model-meta span { flex: 0 1 auto; }
+.model-download-panel { scroll-margin-top: 12px; }
+.model-download-panel:focus-within { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.generation-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.generation-settings-panel .form-actions { justify-content: space-between; }
+.generation-settings-panel .form-actions .field-hint { flex: 1; margin: 0; }
+@media (max-width: 600px) { .generation-field-grid { grid-template-columns: 1fr; gap: 4px; } }
+.model-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 14px; row-gap: 10px; }
+.model-result-main { grid-column: 1 / -1; }
+.model-result-meta { width: 100%; }
+.model-result > a { grid-column: 1; justify-self: start; }
+.model-result-actions { grid-column: 2; justify-self: end; }
+.installed-model { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; row-gap: 10px; }
+.installed-model-main { grid-column: 1 / -1; }
+.installed-model-actions { grid-column: 1 / -1; justify-self: end; }
+@media (max-width: 560px) { .model-result, .installed-model { align-items: center; flex-direction: initial; }.model-result-actions, .installed-model-actions { width: auto; } }
+.model-browser-panel #mmproj-toggle-row[hidden], .model-browser-panel #mmproj-label[hidden], .model-browser-panel #selected-mmproj-file[hidden] { display: none !important; }

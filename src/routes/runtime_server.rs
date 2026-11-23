@@ -171,6 +171,7 @@ async fn start_server(
         .open(&log_path)
         .map_err(ServerError::internal)?;
     let stdout = log.try_clone().map_err(ServerError::internal)?;
+    let generation = *state.generation.read().await;
 
     let mut command = Command::new(&server_path);
     command.arg("--model").arg(&model_path);
@@ -183,7 +184,7 @@ async fn start_server(
         .arg("--port")
         .arg(port.to_string())
         .arg("--ctx-size")
-        .arg(state.config.llm.context_window.to_string())
+        .arg(generation.context_window.to_string())
         .arg("--alias")
         .arg(&state.config.llm.default_model)
         .current_dir(server_path.parent().unwrap_or(Path::new(".")))
