@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatSession {
@@ -120,8 +120,12 @@ impl Database {
     }
 
     pub fn delete_session(&mut self, session_id: i64) -> Result<()> {
-        self.conn.execute("DELETE FROM messages WHERE session_id = ?1", params![session_id])?;
-        self.conn.execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;
+        self.conn.execute(
+            "DELETE FROM messages WHERE session_id = ?1",
+            params![session_id],
+        )?;
+        self.conn
+            .execute("DELETE FROM sessions WHERE id = ?1", params![session_id])?;
         Ok(())
     }
 
@@ -158,9 +162,14 @@ impl Database {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, description, instructions FROM user_profiles ORDER BY name COLLATE NOCASE",
         )?;
-        let rows = stmt.query_map([], |row| Ok(UserProfile {
-            id: row.get(0)?, name: row.get(1)?, description: row.get(2)?, instructions: row.get(3)?,
-        }))?;
+        let rows = stmt.query_map([], |row| {
+            Ok(UserProfile {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                instructions: row.get(3)?,
+            })
+        })?;
         rows.collect()
     }
 
@@ -174,7 +183,8 @@ impl Database {
     }
 
     pub fn delete_profile(&self, id: &str) -> Result<()> {
-        self.conn.execute("DELETE FROM user_profiles WHERE id = ?1", params![id])?;
+        self.conn
+            .execute("DELETE FROM user_profiles WHERE id = ?1", params![id])?;
         self.conn.execute(
             "DELETE FROM app_preferences WHERE key = 'active_profile_id' AND value = ?1",
             params![id],
@@ -183,9 +193,13 @@ impl Database {
     }
 
     pub fn get_preference(&self, key: &str) -> Result<Option<String>> {
-        self.conn.query_row(
-            "SELECT value FROM app_preferences WHERE key = ?1", params![key], |row| row.get(0),
-        ).optional()
+        self.conn
+            .query_row(
+                "SELECT value FROM app_preferences WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()
     }
 
     pub fn set_preference(&self, key: &str, value: &str) -> Result<()> {
@@ -207,25 +221,36 @@ mod tests {
         let mut db = Database::init(":memory:").expect("Failed to initialize in-memory DB");
 
         let session_id = db
-            .create_session("Test Character", Some(r#"{"name":"Test Character"}"#), "First Chat Session")
+            .create_session(
+                "Test Character",
+                Some(r#"{"name":"Test Character"}"#),
+                "First Chat Session",
+            )
             .expect("Failed to create session");
         assert!(session_id > 0);
 
         let sessions = db.get_sessions().expect("Failed to retrieve sessions");
         assert_eq!(sessions.len(), 1);
         assert_eq!(sessions[0].character_name, "Test Character");
-        assert_eq!(sessions[0].character_card_json, Some(r#"{"name":"Test Character"}"#.to_string()));
+        assert_eq!(
+            sessions[0].character_card_json,
+            Some(r#"{"name":"Test Character"}"#.to_string())
+        );
         assert_eq!(sessions[0].title, "First Chat Session");
 
-        let msg_id1 = db.add_message(session_id, "user", "Hello there!")
+        let msg_id1 = db
+            .add_message(session_id, "user", "Hello there!")
             .expect("Failed to add user message");
-        let msg_id2 = db.add_message(session_id, "assistant", "Greetings!")
+        let msg_id2 = db
+            .add_message(session_id, "assistant", "Greetings!")
             .expect("Failed to add assistant message");
 
         assert!(msg_id1 > 0);
         assert!(msg_id2 > 0);
 
-        let messages = db.get_messages(session_id).expect("Failed to retrieve messages");
+        let messages = db
+            .get_messages(session_id)
+            .expect("Failed to retrieve messages");
         assert_eq!(messages.len(), 2);
     }
 }

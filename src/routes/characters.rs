@@ -1,17 +1,16 @@
+use crate::card::CharacterCard;
 use axum::{
     extract::{Multipart, State},
     routing::get,
     Json, Router,
 };
+use base64::{engine::general_purpose, Engine as _};
 use std::fs;
 use std::path::Path;
-use crate::card::CharacterCard;
-use base64::{engine::general_purpose, Engine as _};
 use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
-    Router::new()
-        .route("/", get(list_characters).post(upload_character))
+    Router::new().route("/", get(list_characters).post(upload_character))
 }
 
 #[derive(serde::Serialize)]
@@ -23,9 +22,7 @@ pub struct CharacterSummary {
     avatar_url: Option<String>,
 }
 
-async fn list_characters(
-    State(state): State<Arc<crate::AppState>>,
-) -> Json<Vec<CharacterSummary>> {
+async fn list_characters(State(state): State<Arc<crate::AppState>>) -> Json<Vec<CharacterSummary>> {
     let mut summaries = Vec::new();
     let root_dir = state.data_dir.join("characters");
 
@@ -69,7 +66,11 @@ async fn list_characters(
                                 };
 
                                 summaries.push(CharacterSummary {
-                                    filename: path.file_name().unwrap().to_string_lossy().to_string(),
+                                    filename: path
+                                        .file_name()
+                                        .unwrap()
+                                        .to_string_lossy()
+                                        .to_string(),
                                     name: card.data.name,
                                     description: card.data.description,
                                     creator: card.data.creator,
@@ -107,7 +108,10 @@ async fn upload_character(
         // Validate card
         let card = CharacterCard::from_file(&dest_path).map_err(|e| {
             let _ = fs::remove_file(&dest_path);
-            StatusCodeResponse(axum::http::StatusCode::BAD_REQUEST, format!("Invalid character card: {}", e))
+            StatusCodeResponse(
+                axum::http::StatusCode::BAD_REQUEST,
+                format!("Invalid character card: {}", e),
+            )
         })?;
 
         let avatar_url = if filename.to_lowercase().ends_with(".png") {
@@ -128,7 +132,10 @@ async fn upload_character(
         }));
     }
 
-    Err(StatusCodeResponse(axum::http::StatusCode::BAD_REQUEST, "No file uploaded".into()))
+    Err(StatusCodeResponse(
+        axum::http::StatusCode::BAD_REQUEST,
+        "No file uploaded".into(),
+    ))
 }
 
 struct StatusCodeResponse(axum::http::StatusCode, String);
@@ -139,5 +146,8 @@ impl axum::response::IntoResponse for StatusCodeResponse {
 }
 
 fn internal_error<E: std::fmt::Display>(err: E) -> StatusCodeResponse {
-    StatusCodeResponse(axum::http::StatusCode::INTERNAL_SERVER_ERROR, err.to_string())
+    StatusCodeResponse(
+        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+        err.to_string(),
+    )
 }

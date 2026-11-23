@@ -26,7 +26,7 @@ NOTE: Character Cards can be created with the [Character Card Generator](https:/
 
 On first startup, Strawberry Social automatically creates the necessary directory hierarchy for user data:
 
-* **Linux**: `~/.local/share/strawberry-social`
+* **Linux**: `~/.local/share/strawberry-social` (the app copies missing files from the earlier `~/.local/share/strawberrysocial` location on startup; the original folder is left in place as a backup)
 * **Windows**: `%LOCALAPPDATA%\StrawberrySocial`
 
 This directory houses:

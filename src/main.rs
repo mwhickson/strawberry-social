@@ -5,16 +5,19 @@ use axum::{
     routing::get,
     Router,
 };
+#[cfg(target_os = "linux")]
+use directories::BaseDirs;
+#[cfg(not(target_os = "linux"))]
+use directories::ProjectDirs;
 use rust_embed::RustEmbed;
 use std::fs::File;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use directories::ProjectDirs;
 
-mod config;
 mod card;
+mod config;
 mod db;
 mod llm;
 mod routes;
@@ -36,11 +39,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Determine platform-standard data directory
     // Linux: ~/.local/share/strawberry-social
     // Windows: C:\Users\<User>\AppData\Local\StrawberrySocial
-    let proj_dirs = ProjectDirs::from("com", "StrawberrySocial", "StrawberrySocial")
-        .ok_or("Failed to determine home directory")?;
+    #[cfg(target_os = "linux")]
+    let (data_dir, legacy_data_dir) = {
+        let base_dirs = BaseDirs::new().ok_or("Failed to determine home directory")?;
+        let data_root = base_dirs.data_local_dir();
+        (
+            data_root.join("strawberry-social"),
+            Some(data_root.join("strawberrysocial")),
+        )
+    };
+    #[cfg(not(target_os = "linux"))]
+    let (data_dir, legacy_data_dir) = {
+        let proj_dirs = ProjectDirs::from("com", "StrawberrySocial", "StrawberrySocial")
+            .ok_or("Failed to determine home directory")?;
+        (proj_dirs.data_local_dir().to_path_buf(), None::<PathBuf>)
+    };
 
-    let data_dir = proj_dirs.data_local_dir();
-    std::fs::create_dir_all(data_dir)?;
+    if let Some(legacy_dir) = legacy_data_dir.as_deref() {
+        migrate_missing_data(legacy_dir, &data_dir)?;
+    }
+    std::fs::create_dir_all(&data_dir)?;
 
     // Define absolute paths for subdirectories and files
     let characters_dir = data_dir.join("characters");
@@ -63,7 +81,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".into()),
         ))
-        .with(tracing_subscriber::fmt::layer().with_writer(log_file).with_ansi(false))
+        .with(
+            tracing_subscriber::fmt::layer()
+                .with_writer(log_file)
+                .with_ansi(false),
+        )
         .init();
 
     // Load or generate config.yaml in the standard directory
@@ -94,6 +116,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn migrate_missing_data(
+    source: &std::path::Path,
+    destination: &std::path::Path,
+) -> std::io::Result<()> {
+    if !source.is_dir() || source == destination {
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(destination)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        let file_type = entry.file_type()?;
+
+        if file_type.is_dir() {
+            migrate_missing_data(&source_path, &destination_path)?;
+        } else if file_type.is_file() && !destination_path.exists() {
+            if let Some(parent) = destination_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::copy(&source_path, &destination_path)?;
+        }
+    }
+    Ok(())
+}
+
 // Handler for embedded static files (index.html, CSS, JS)
 async fn static_handler(uri: Uri) -> impl IntoResponse {
     let mut path = uri.path().trim_start_matches('/');
@@ -105,7 +154,10 @@ async fn static_handler(uri: Uri) -> impl IntoResponse {
         Some(content) => {
             let mime = mime_guess::from_path(path).first_or_octet_stream();
             Response::builder()
-                .header(header::CONTENT_TYPE, HeaderValue::from_str(mime.as_ref()).unwrap())
+                .header(
+                    header::CONTENT_TYPE,
+                    HeaderValue::from_str(mime.as_ref()).unwrap(),
+                )
                 .body(Body::from(content.data))
                 .unwrap()
         }

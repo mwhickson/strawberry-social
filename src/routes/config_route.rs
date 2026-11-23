@@ -1,6 +1,6 @@
+use crate::AppState;
 use axum::{routing::get, Json, Router};
 use std::sync::Arc;
-use crate::AppState;
 
 pub fn router() -> Router<Arc<AppState>> {
     Router::new().route("/", get(get_config))

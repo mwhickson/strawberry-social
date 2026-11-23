@@ -37,7 +37,7 @@ impl LlmClient {
         request: &ChatCompletionRequest,
     ) -> Result<reqwest::Response, reqwest::Error> {
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
-        
+
         let mut req_builder = self.client.post(&url).json(request);
         if !self.api_key.is_empty() && self.api_key != "not-needed" {
             req_builder = req_builder.header("Authorization", format!("Bearer {}", self.api_key));

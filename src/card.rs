@@ -121,13 +121,19 @@ impl CharacterCard {
 
             if chunk_type == "tEXt" || chunk_type == "iTXt" {
                 // Log found text chunks to help debug metadata placement
-                tracing::info!("🔍 Found PNG text chunk [{}] of length {} bytes", chunk_type, length);
+                tracing::info!(
+                    "🔍 Found PNG text chunk [{}] of length {} bytes",
+                    chunk_type,
+                    length
+                );
 
                 // tEXt format: keyword \0 text
                 // iTXt format: keyword \0 compression_flag compression_method language_tag \0 translated_keyword \0 text
                 if chunk_type == "tEXt" {
                     if let Some(pos) = chunk_data.iter().position(|&b| b == 0) {
-                        let keyword = String::from_utf8_lossy(&chunk_data[..pos]).trim().to_lowercase();
+                        let keyword = String::from_utf8_lossy(&chunk_data[..pos])
+                            .trim()
+                            .to_lowercase();
                         let text = String::from_utf8_lossy(&chunk_data[pos + 1..]).to_string();
                         tracing::info!("   -> tEXt keyword: '{}'", keyword);
                         if keyword == "ccv3" {
@@ -139,7 +145,9 @@ impl CharacterCard {
                 } else if chunk_type == "iTXt" {
                     // Find first null terminator for keyword
                     if let Some(pos1) = chunk_data.iter().position(|&b| b == 0) {
-                        let keyword = String::from_utf8_lossy(&chunk_data[..pos1]).trim().to_lowercase();
+                        let keyword = String::from_utf8_lossy(&chunk_data[..pos1])
+                            .trim()
+                            .to_lowercase();
                         tracing::info!("   -> iTXt keyword: '{}'", keyword);
 
                         // Skip past null terminator, compression flag (1), compression method (1), and language tag until next nulls
@@ -158,7 +166,8 @@ impl CharacterCard {
                                 }
                             }
                             if text_start > 0 && text_start < remainder.len() {
-                                let text = String::from_utf8_lossy(&remainder[text_start..]).to_string();
+                                let text =
+                                    String::from_utf8_lossy(&remainder[text_start..]).to_string();
                                 if keyword == "ccv3" {
                                     ccv3_data = Some(text);
                                 } else if keyword == "chara" {
@@ -175,7 +184,8 @@ impl CharacterCard {
             }
         }
 
-        let raw_b64 = ccv3_data.or(chara_data)
+        let raw_b64 = ccv3_data
+            .or(chara_data)
             .ok_or("No character metadata ('ccv3' or 'chara') found in PNG image.")?;
 
         // Clean up any extraneous whitespace or newlines in base64 string
