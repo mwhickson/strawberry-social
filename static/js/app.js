@@ -5,7 +5,9 @@ const THEME_KEY = "strawberry-social-theme-v1"; // Used only once to migrate the
 const state = {
     config: {}, characters: [], sessions: [], profiles: [], activeProfileId: null,
     currentSessionId: null, currentCharacter: null, currentCard: null, editingProfileId: null,
-    runtimeInfoLoaded: false, runtimeInfoLoading: false, modelInstalled: false
+    runtimeInfoLoaded: false, runtimeInfoLoading: false,
+    serverStatus: null, installedModels: [], selectedModelFiles: null, downloadId: null,
+    modelBrowserLoaded: false, modelBrowserLoading: false, lastDownloadStatus: "idle"
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -25,8 +27,8 @@ async function initializeApp() {
     applyTheme(state.theme || "dark");
     await Promise.all([loadConfig(), loadCharacters(), loadSessions()]);
     renderProfiles();
-    await Promise.all([loadModelStatus(), refreshServerStatus()]);
-    window.setInterval(refreshServerStatus, 2000);
+    await Promise.all([loadInstalledModels(), refreshServerStatus(), refreshDownloadStatus()]);
+    window.setInterval(() => { refreshServerStatus(); refreshDownloadStatus(); }, 1200);
 }
 
 function bindNavigation() {
@@ -46,7 +48,11 @@ function navigate(view, updateHash = true) {
     });
     $$(".nav-item").forEach(button => button.classList.toggle("active", button.dataset.view === view));
     if (updateHash && location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
-    if (view === "settings" && !state.runtimeInfoLoaded) loadRuntimeInfo();
+    if (view === "settings") {
+        if (!state.runtimeInfoLoaded) loadRuntimeInfo();
+        if (!state.modelBrowserLoaded) loadHubModels();
+        loadInstalledModels();
+    }
 }
 
 async function loadConfig() {
@@ -427,91 +433,300 @@ function bindSettings() {
 }
 
 function bindModelControls() {
-    $("#download-model-btn").addEventListener("click", downloadProofModel);
-    $("#start-server-btn").addEventListener("click", startManagedServer);
-    $("#stop-server-btn").addEventListener("click", stopManagedServer);
+    $("#search-models-btn").addEventListener("click", () => loadHubModels(true));
+    $("#close-model-files-btn").addEventListener("click", () => { $("#model-download-panel").hidden = true; });
+    $("#include-mmproj").addEventListener("change", updateMmprojSelection);
+    $("#start-model-download-btn").addEventListener("click", startModelDownload);
+    $("#pause-model-download-btn").addEventListener("click", () => controlModelDownload("pause"));
+    $("#resume-model-download-btn").addEventListener("click", () => controlModelDownload("resume"));
+    $("#cancel-model-download-btn").addEventListener("click", () => controlModelDownload("cancel"));
 }
 
-async function loadModelStatus() {
+async function loadHubModels(force = false) {
+    if (state.modelBrowserLoading || (state.modelBrowserLoaded && !force)) return;
+    state.modelBrowserLoading = true;
+    const status = $("#model-browser-status");
+    const results = $("#model-search-results");
+    const min = $("#model-min-parameters").value;
+    const max = $("#model-max-parameters").value;
+    status.textContent = "Loading trending and popular Hugging Face models…";
+    results.replaceChildren();
     try {
-        const response = await fetch("/api/models/status");
+        const query = new URLSearchParams();
+        if (min !== "any") query.set("min", min);
+        if (max !== "any") query.set("max", max);
+        const response = await fetch(`/api/models/search?${query}`);
         if (!response.ok) throw new Error(await response.text());
-        const model = await response.json();
-        state.modelInstalled = !!model.installed;
-        $("#model-status").textContent = model.installed
-            ? `${model.name} is installed in the Strawberry Social models folder.`
-            : "This model is not downloaded yet.";
-        $("#download-model-btn").hidden = !!model.installed;
-        $("#start-server-btn").disabled = !model.installed;
+        const models = await response.json();
+        state.modelBrowserLoaded = true;
+        renderHubModels(models);
+        status.textContent = `${models.length} models · trending first, then additional results from downloads.`;
     } catch (error) {
-        $("#model-status").textContent = `Could not check model files: ${error.message}`;
+        status.textContent = `Could not load Hugging Face models: ${error.message}`;
+        const retry = document.createElement("button");
+        retry.type = "button"; retry.className = "secondary-button"; retry.textContent = "Retry model search";
+        retry.addEventListener("click", () => loadHubModels(true));
+        results.append(retry);
+    } finally { state.modelBrowserLoading = false; }
+}
+
+function renderHubModels(models) {
+    const container = $("#model-search-results");
+    container.replaceChildren();
+    if (!models.length) {
+        container.append(emptyState("No matching GGUF models", "Try a wider parameter range or refresh the search."));
+        return;
+    }
+    models.forEach(model => {
+        const row = document.createElement("article"); row.className = "model-result";
+        const main = document.createElement("div"); main.className = "model-result-main";
+        const name = document.createElement("h3"); name.textContent = model.repo_id;
+        const meta = document.createElement("div"); meta.className = "model-result-meta";
+        meta.append(document.createTextNode(formatParameterCount(model.parameter_count, model.parameter_count_estimated)));
+        meta.append(document.createTextNode(`Updated ${formatModelDate(model.last_updated)}`));
+        if (Number.isFinite(model.downloads)) meta.append(document.createTextNode(`${formatCount(model.downloads)} downloads`));
+        main.append(name, meta);
+        const link = document.createElement("a"); link.href = model.url; link.target = "_blank"; link.rel = "noopener noreferrer"; link.textContent = "View on Hugging Face ↗";
+        const actions = document.createElement("div"); actions.className = "model-result-actions";
+        if (model.installed) {
+            const badge = document.createElement("span"); badge.className = "model-installed-badge"; badge.textContent = "Downloaded"; actions.append(badge);
+        }
+        const choose = document.createElement("button"); choose.type = "button"; choose.className = model.installed ? "secondary-button" : "primary-button";
+        choose.textContent = model.installed ? "Manage files" : "Choose files";
+        choose.addEventListener("click", () => loadModelFiles(model)); actions.append(choose);
+        row.append(main, link, actions); container.append(row);
+    });
+}
+
+async function loadModelFiles(model) {
+    const panel = $("#model-download-panel");
+    const description = $("#selected-repo-description");
+    panel.hidden = false;
+    $("#selected-repo-title").textContent = model.repo_id;
+    description.textContent = "Loading available GGUF files and sizes…";
+    try {
+        const response = await fetch(`/api/models/files?repo_id=${encodeURIComponent(model.repo_id)}`);
+        if (!response.ok) throw new Error(await response.text());
+        const data = await response.json();
+        state.selectedModelFiles = { ...data, model };
+        const sortedModels = [...data.model_files].sort((a, b) => quantizationRank(a.quantization) - quantizationRank(b.quantization));
+        populateModelFileSelect($("#selected-model-file"), sortedModels);
+        const hasMmproj = data.mmproj_files.length > 0;
+        $("#mmproj-toggle-row").hidden = !hasMmproj;
+        $("#include-mmproj").checked = false;
+        $("#selected-mmproj-file").replaceChildren();
+        populateModelFileSelect($("#selected-mmproj-file"), data.mmproj_files);
+        updateMmprojSelection();
+        description.textContent = `${data.repo_id} · ${formatModelDate(model.last_updated)} · select the model quantization and optionally include a companion projector.`;
+    } catch (error) {
+        description.textContent = `Could not load repository files: ${error.message}`;
     }
 }
 
-async function downloadProofModel() {
-    const button = $("#download-model-btn");
-    button.disabled = true;
-    $("#model-status").textContent = "Downloading and verifying the 175 MB GGUF model…";
-    try {
-        const response = await fetch("/api/models/smolvlm-256m", { method: "POST" });
-        if (!response.ok) throw new Error(await response.text());
-        const result = await response.json();
-        state.modelInstalled = result.installed;
-        $("#model-status").textContent = `${result.name} downloaded and checksum verified in the models folder.`;
-        await loadModelStatus();
-    } catch (error) {
-        $("#model-status").textContent = `Model download failed: ${error.message}`;
-        button.textContent = "Retry model download";
-        button.hidden = false;
-    } finally { button.disabled = false; }
+function populateModelFileSelect(select, files) {
+    select.replaceChildren();
+    files.forEach(file => {
+        const option = document.createElement("option"); option.value = file.path;
+        option.textContent = `${file.quantization} · ${file.path} · ${formatBytes(file.size)}`;
+        select.append(option);
+    });
 }
 
-async function startManagedServer() {
-    const button = $("#start-server-btn");
-    button.disabled = true;
-    $("#model-status").textContent = "Starting llama.cpp and loading SmolVLM…";
+function updateMmprojSelection() {
+    const show = $("#include-mmproj").checked && !!state.selectedModelFiles?.mmproj_files.length;
+    $("#mmproj-label").hidden = !show;
+    $("#selected-mmproj-file").hidden = !show;
+}
+
+async function startModelDownload() {
+    const files = state.selectedModelFiles;
+    if (!files) return;
+    const modelFile = $("#selected-model-file").value;
+    const mmprojFile = $("#include-mmproj").checked ? $("#selected-mmproj-file").value : null;
+    if (!modelFile) return;
     try {
-        const response = await fetch("/api/runtime-server/start", { method: "POST" });
+        const response = await fetch("/api/models/download", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ repo_id: files.repo_id, revision: files.revision, model_file: modelFile, mmproj_file: mmprojFile })
+        });
         if (!response.ok) throw new Error(await response.text());
         const result = await response.json();
-        $("#model-status").textContent = result.detail;
-        await refreshServerStatus();
+        state.downloadId = result.id;
+        $("#model-download-progress").hidden = false;
+        await refreshDownloadStatus();
     } catch (error) {
-        $("#model-status").textContent = `Could not start llama.cpp: ${error.message}`;
-    } finally { button.disabled = !state.modelInstalled; }
+        $("#model-browser-status").textContent = `Could not start model download: ${error.message}`;
+    }
+}
+
+async function refreshDownloadStatus() {
+    try {
+        const response = await fetch("/api/models/download/status");
+        if (!response.ok) throw new Error(await response.text());
+        const job = await response.json();
+        state.downloadId = job.id;
+        renderDownloadStatus(job);
+        if (job.status === "completed" && state.lastDownloadStatus !== "completed") {
+            await loadInstalledModels();
+            state.modelBrowserLoaded = false;
+        }
+        state.lastDownloadStatus = job.status;
+    } catch (error) {
+        $("#model-browser-status").textContent = `Could not check download status: ${error.message}`;
+    }
+}
+
+function renderDownloadStatus(job) {
+    const panel = $("#model-download-progress");
+    if (job.status === "idle") { panel.hidden = true; return; }
+    panel.hidden = false;
+    $("#download-progress-title").textContent = `${job.repo_id || "Model"} · ${job.status}`;
+    const percent = job.total_bytes > 0 ? Math.min(100, Math.floor(job.downloaded_bytes * 100 / job.total_bytes)) : 0;
+    $("#download-progress-percent").textContent = job.total_bytes > 0 ? `${percent}% · ${formatBytes(job.downloaded_bytes)} / ${formatBytes(job.total_bytes)}` : formatBytes(job.downloaded_bytes);
+    const progress = $("#model-download-progress-bar");
+    progress.value = percent; progress.removeAttribute("value");
+    if (job.total_bytes > 0) progress.value = percent;
+    $("#download-progress-detail").textContent = `${job.detail}${job.current_file ? ` · ${job.current_file}` : ""}`;
+    const active = ["downloading", "paused", "cancelling"].includes(job.status);
+    $("#pause-model-download-btn").hidden = !active || job.status !== "downloading";
+    $("#resume-model-download-btn").hidden = job.status !== "paused";
+    $("#cancel-model-download-btn").hidden = !active;
+    if (!active && job.status !== "completed") $("#model-browser-status").textContent = job.detail;
+    if (job.status === "completed") $("#model-browser-status").textContent = job.detail;
+}
+
+async function controlModelDownload(action) {
+    if (!state.downloadId) return;
+    try {
+        const response = await fetch("/api/models/download/control", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: state.downloadId, action })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        renderDownloadStatus(await response.json());
+    } catch (error) { $("#download-progress-detail").textContent = `Download action failed: ${error.message}`; }
+}
+
+async function loadInstalledModels() {
+    try {
+        const response = await fetch("/api/models/installed");
+        if (!response.ok) throw new Error(await response.text());
+        state.installedModels = await response.json();
+        renderInstalledModels();
+    } catch (error) {
+        $("#installed-models").textContent = `Could not read downloaded models: ${error.message}`;
+    }
+}
+
+function renderInstalledModels() {
+    const container = $("#installed-models"); container.replaceChildren();
+    if (!state.installedModels.length) {
+        const empty = document.createElement("p"); empty.className = "field-hint"; empty.textContent = "No models have been downloaded yet."; container.append(empty); return;
+    }
+    state.installedModels.forEach(model => {
+        const row = document.createElement("article"); row.className = "installed-model";
+        const main = document.createElement("div"); main.className = "installed-model-main";
+        const title = document.createElement("h4"); title.textContent = model.repo_id;
+        const meta = document.createElement("div"); meta.className = "installed-model-meta";
+        meta.append(document.createTextNode(`${model.files.length} GGUF ${model.files.length === 1 ? "file" : "files"}`));
+        meta.append(document.createTextNode(formatBytes(model.size)));
+        meta.append(document.createTextNode(model.active ? `Loaded: ${model.model_file || "model"}` : "Not loaded"));
+        const externalServer = !!state.serverStatus && state.serverStatus.state !== "offline" && !state.serverStatus.managed;
+        if (model.active) meta.append(document.createTextNode("Stop or switch models before deleting."));
+        else if (externalServer) meta.append(document.createTextNode("Stop the external server before deleting downloaded models."));
+        main.append(title, meta);
+        const actions = document.createElement("div"); actions.className = "installed-model-actions";
+        const run = document.createElement("button"); run.type = "button"; run.className = "primary-button";
+        const serverRunning = state.serverStatus && state.serverStatus.state !== "offline";
+        run.textContent = model.active ? "Stop llama.cpp" : serverRunning ? "Switch to this model" : "Start this model";
+        run.disabled = !model.model_file || (serverRunning && !state.serverStatus.managed);
+        run.addEventListener("click", () => model.active ? stopManagedServer() : startInstalledModel(model));
+        const remove = document.createElement("button"); remove.type = "button"; remove.className = "danger-button"; remove.textContent = "Delete";
+        remove.disabled = model.active || externalServer;
+        remove.title = model.active ? "Stop llama.cpp or switch models before deleting this model." : externalServer ? "Stop the external inference server before deleting models." : "Delete downloaded model files";
+        remove.addEventListener("click", () => deleteInstalledModel(model));
+        actions.append(run, remove); row.append(main, actions); container.append(row);
+    });
+}
+
+async function startInstalledModel(model) {
+    try {
+        if (state.serverStatus?.state !== "offline") {
+            if (!state.serverStatus?.managed) throw new Error("Stop the externally managed llama.cpp server before switching models.");
+            await stopManagedServer();
+        }
+        const response = await fetch("/api/runtime-server/start", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ repo_id: model.repo_id, model_file: model.model_file, mmproj_file: model.mmproj_file })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json(); $("#model-browser-status").textContent = result.detail;
+        await refreshServerStatus();
+    } catch (error) { $("#model-browser-status").textContent = `Could not start model: ${error.message}`; }
 }
 
 async function stopManagedServer() {
-    $("#stop-server-btn").disabled = true;
     try {
         const response = await fetch("/api/runtime-server/stop", { method: "POST" });
         if (!response.ok) throw new Error(await response.text());
-        const result = await response.json();
-        $("#model-status").textContent = result.detail;
-        await refreshServerStatus();
-    } catch (error) { $("#model-status").textContent = `Could not stop llama.cpp: ${error.message}`; }
-    finally { $("#stop-server-btn").disabled = false; }
+        const result = await response.json(); $("#model-browser-status").textContent = result.detail;
+        await refreshServerStatus(); await loadInstalledModels();
+    } catch (error) { $("#model-browser-status").textContent = `Could not stop llama.cpp: ${error.message}`; }
+}
+
+async function deleteInstalledModel(model) {
+    if (!window.confirm(`Delete all downloaded files for ${model.repo_id}? This cannot be undone.`)) return;
+    try {
+        const response = await fetch("/api/models/delete", {
+            method: "DELETE", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ repo_id: model.repo_id })
+        });
+        if (!response.ok) throw new Error(await response.text());
+        $("#model-browser-status").textContent = `${model.repo_id} was deleted from the models folder.`;
+        await loadInstalledModels(); state.modelBrowserLoaded = false;
+    } catch (error) { $("#model-browser-status").textContent = `Could not delete model: ${error.message}`; }
 }
 
 async function refreshServerStatus() {
     try {
         const response = await fetch("/api/runtime-server/status");
         if (!response.ok) throw new Error(await response.text());
-        renderServerStatus(await response.json());
+        const status = await response.json(); renderServerStatus(status);
     } catch (error) {
         renderServerStatus({ state: "offline", detail: "Strawberry Social cannot reach its local status endpoint." });
     }
 }
 
 function renderServerStatus(status) {
+    const previousKey = `${state.serverStatus?.state}:${state.serverStatus?.managed}:${state.serverStatus?.active_model?.repo_id}`;
+    state.serverStatus = status;
     const stateName = ["running", "starting", "offline"].includes(status.state) ? status.state : "offline";
     $("#server-status-indicator").dataset.state = stateName;
     $(".workspace-statusbar").dataset.state = stateName;
     $("#server-status-text").textContent = stateName.charAt(0).toUpperCase() + stateName.slice(1);
-    $("#server-status-detail").textContent = status.detail || "";
-    $("#stop-server-btn").hidden = stateName === "offline" || !status.managed;
-    $("#start-server-btn").hidden = stateName === "running" || stateName === "starting";
-    $("#start-server-btn").disabled = !state.modelInstalled;
+    $("#server-status-detail").textContent = status.active_model
+        ? `${status.active_model.repo_id} · ${status.active_model.model_file}`
+        : status.detail || "";
+    const currentKey = `${status.state}:${status.managed}:${status.active_model?.repo_id}`;
+    if (previousKey !== currentKey) loadInstalledModels();
+}
+
+function formatParameterCount(count, estimated = false) {
+    if (!Number.isFinite(count) || count <= 0) return "Parameter count unavailable";
+    const prefix = estimated ? "~" : "";
+    if (count >= 1e9) return `${prefix}${(count / 1e9).toFixed(count % 1e9 === 0 ? 0 : 1)}B parameters`;
+    if (count >= 1e6) return `${prefix}${(count / 1e6).toFixed(count % 1e6 === 0 ? 0 : 1)}M parameters`;
+    return `${prefix}${formatCount(count)} parameters`;
+}
+
+function formatCount(count) { return new Intl.NumberFormat().format(count); }
+function formatModelDate(value) {
+    if (!value) return "date unavailable";
+    const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleDateString();
+}
+function quantizationRank(value) {
+    const ranks = ["Q4_K_M", "Q5_K_M", "Q4_K_S", "Q5_K_S", "Q4_0", "Q5_0", "Q6_K", "Q8_0", "Q3_K_M", "Q3_K_S", "Q2_K", "F16", "BF16", "F32"];
+    const index = ranks.indexOf(value); return index < 0 ? ranks.length + 1 : index;
 }
 
 async function loadRuntimeInfo(retry = false) {

@@ -32,8 +32,16 @@ pub struct AppState {
     pub config: AppConfig,
     pub data_dir: PathBuf,
     pub runtime_download_lock: Arc<tokio::sync::Mutex<()>>,
-    pub model_download_lock: Arc<tokio::sync::Mutex<()>>,
+    pub model_download: Arc<tokio::sync::Mutex<Option<routes::models::DownloadJob>>>,
     pub runtime_server: Arc<tokio::sync::Mutex<Option<tokio::process::Child>>>,
+    pub active_model: Arc<tokio::sync::Mutex<Option<ActiveModel>>>,
+}
+
+#[derive(Clone, serde::Serialize)]
+pub struct ActiveModel {
+    pub repo_id: String,
+    pub model_file: String,
+    pub mmproj_file: Option<String>,
 }
 
 #[tokio::main]
@@ -61,6 +69,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         migrate_missing_data(legacy_dir, &data_dir)?;
     }
     std::fs::create_dir_all(&data_dir)?;
+    routes::models::migrate_legacy_model(&data_dir)?;
+    routes::models::cleanup_incomplete_downloads(&data_dir);
 
     // Define absolute paths for subdirectories and files
     let characters_dir = data_dir.join("characters");
@@ -96,8 +106,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: config.clone(),
         data_dir: data_dir.to_path_buf(),
         runtime_download_lock: Arc::new(tokio::sync::Mutex::new(())),
-        model_download_lock: Arc::new(tokio::sync::Mutex::new(())),
+        model_download: Arc::new(tokio::sync::Mutex::new(None)),
         runtime_server: Arc::new(tokio::sync::Mutex::new(None)),
+        active_model: Arc::new(tokio::sync::Mutex::new(None)),
     });
 
     // Build Axum router combining API routes, config, and static asset fallback

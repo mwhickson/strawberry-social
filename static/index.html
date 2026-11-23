@@ -59,11 +59,31 @@
                         <button id="retry-runtime-info" class="secondary-button" type="button" hidden>Retry release check</button>
                         <label class="runtime-auto-download"><input id="auto-download-runtime" type="checkbox"><span><strong>Automatically download runtime updates</strong><small>Allows Strawberry Social to download a newer runtime when you open Settings.</small></span></label>
                     </section>
-                    <section class="panel settings-panel model-panel">
-                        <div><span class="eyebrow">PROOF OF LIFE</span><h2>SmolVLM 256M Instruct</h2><p>A small text-chat test model from ggml-org’s GGUF collection. Its companion vision projector is not included, so this setup is text-only.</p></div>
-                        <div class="model-meta"><span>Q8_0 GGUF</span><span>175 MB</span><span>Apache 2.0</span><a href="https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF" target="_blank" rel="noopener noreferrer">Hugging Face ↗</a></div>
-                        <p id="model-status" class="field-hint" role="status" aria-live="polite">Checking model…</p>
-                        <div class="model-actions"><button id="download-model-btn" class="primary-button" type="button">Download model (175 MB)</button><button id="start-server-btn" class="primary-button" type="button" disabled>Start llama.cpp</button><button id="stop-server-btn" class="secondary-button" type="button" hidden>Stop server</button></div>
+                    <section class="panel settings-panel model-browser-panel">
+                        <div><span class="eyebrow">MODEL LIBRARY</span><h2>Browse Hugging Face GGUF models</h2><p>Explore trending llama.cpp compatible text-generation models, then choose a quantization and optional vision projector.</p></div>
+                        <div class="model-browser-filters">
+                            <label>Minimum parameters<select class="text-field" id="model-min-parameters"><option value="0">0</option><option value="3B" selected>3B</option><option value="6B">6B</option><option value="9B">9B</option><option value="12B">12B</option><option value="24B">24B</option><option value="32B">32B</option><option value="64B">64B</option><option value="128B">128B</option><option value="256B">256B</option></select></label>
+                            <label>Maximum parameters<select class="text-field" id="model-max-parameters"><option value="any">No maximum (&gt;500B)</option><option value="0">0</option><option value="3B">3B</option><option value="6B">6B</option><option value="9B" selected>9B</option><option value="12B">12B</option><option value="24B">24B</option><option value="32B">32B</option><option value="64B">64B</option><option value="128B">128B</option><option value="256B">256B</option></select></label>
+                            <button id="search-models-btn" class="primary-button" type="button">Find models</button>
+                        </div>
+                        <p id="model-browser-status" class="field-hint" role="status" aria-live="polite">Loading Hugging Face models…</p>
+                        <div id="model-search-results" class="model-search-results"></div>
+                        <div class="installed-models-section"><h3>Downloaded models</h3><div id="installed-models" class="installed-model-list"><p class="field-hint">Checking your models folder…</p></div></div>
+                        <section id="model-download-panel" class="model-download-panel" hidden aria-label="Choose model files">
+                            <div><span class="eyebrow">FILE SELECTION</span><h3 id="selected-repo-title">Choose model files</h3><p id="selected-repo-description" class="field-hint"></p></div>
+                            <label class="field-label" for="selected-model-file">Model GGUF · quantization · file size</label>
+                            <select class="text-field" id="selected-model-file"></select>
+                            <label id="mmproj-toggle-row" class="mmproj-toggle" hidden><input id="include-mmproj" type="checkbox"><span><strong>Include vision projector</strong><small>Required for image input on multimodal models. Downloads an additional file.</small></span></label>
+                            <label class="field-label" for="selected-mmproj-file" id="mmproj-label" hidden>Vision projector file</label>
+                            <select class="text-field" id="selected-mmproj-file" hidden></select>
+                            <div class="model-actions"><button id="start-model-download-btn" class="primary-button" type="button">Download selected files</button><button id="close-model-files-btn" class="secondary-button" type="button">Close</button></div>
+                        </section>
+                        <section id="model-download-progress" class="model-download-progress" hidden aria-live="polite">
+                            <div class="download-progress-heading"><strong id="download-progress-title">Downloading model</strong><span id="download-progress-percent">0%</span></div>
+                            <progress id="model-download-progress-bar" max="100" value="0"></progress>
+                            <p id="download-progress-detail" class="field-hint"></p>
+                            <div class="model-actions"><button id="pause-model-download-btn" class="secondary-button" type="button">Pause</button><button id="resume-model-download-btn" class="secondary-button" type="button" hidden>Resume</button><button id="cancel-model-download-btn" class="danger-button" type="button">Cancel download</button></div>
+                        </section>
                     </section>
                     <section class="panel settings-panel">
                         <div><h2>Inference connection</h2><p>The managed server listens on the loopback address and port configured here.</p></div>

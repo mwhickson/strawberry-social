@@ -1,5 +1,5 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, OpenOptions},
     net::IpAddr,
@@ -24,6 +24,7 @@ struct ServerStatus {
     state: &'static str,
     detail: String,
     managed: bool,
+    active_model: Option<crate::ActiveModel>,
 }
 
 async fn get_status(State(state): State<Arc<AppState>>) -> Json<ServerStatus> {
@@ -38,21 +39,25 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<ServerStatus> {
                     "A server is responding at the configured API address (externally managed)."
                         .into(),
                 managed: false,
+                active_model: None,
             });
         }
         return Json(ServerStatus {
             state: "offline",
             detail: "The managed llama.cpp server is stopped.".into(),
             managed: false,
+            active_model: None,
         });
     };
     match child.try_wait() {
         Ok(Some(status)) => {
             *process = None;
+            *state.active_model.lock().await = None;
             Json(ServerStatus {
                 state: "offline",
                 detail: format!("llama-server exited with {status}."),
                 managed: false,
+                active_model: None,
             })
         }
         Ok(None) => {
@@ -63,12 +68,14 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<ServerStatus> {
                     state: "starting",
                     detail: "llama-server is loading the model.".into(),
                     managed: true,
+                    active_model: state.active_model.lock().await.clone(),
                 })
             } else {
                 Json(ServerStatus {
                     state: "running",
                     detail: "The model is loaded and ready.".into(),
                     managed: true,
+                    active_model: state.active_model.lock().await.clone(),
                 })
             }
         }
@@ -76,6 +83,7 @@ async fn get_status(State(state): State<Arc<AppState>>) -> Json<ServerStatus> {
             state: "offline",
             detail: format!("Could not inspect llama-server: {error}"),
             managed: false,
+            active_model: None,
         }),
     }
 }
@@ -86,8 +94,16 @@ struct ServerActionResponse {
     detail: String,
 }
 
+#[derive(Deserialize)]
+struct StartServerRequest {
+    repo_id: String,
+    model_file: String,
+    mmproj_file: Option<String>,
+}
+
 async fn start_server(
     State(state): State<Arc<AppState>>,
+    Json(request): Json<StartServerRequest>,
 ) -> Result<Json<ServerActionResponse>, ServerError> {
     if !cfg!(target_os = "linux") {
         return Err(ServerError(
@@ -99,6 +115,18 @@ async fn start_server(
     let (_, _, configured_health_url) = server_address(&state)?;
     if let Some(child) = process.as_mut() {
         if child.try_wait().map_err(ServerError::internal)?.is_none() {
+            let active = state.active_model.lock().await.clone();
+            if active.as_ref().is_some_and(|model| {
+                model.repo_id != request.repo_id
+                    || model.model_file != request.model_file
+                    || model.mmproj_file != request.mmproj_file
+            }) {
+                return Err(ServerError(
+                    StatusCode::CONFLICT,
+                    "Another model is currently loaded. Stop llama.cpp before switching models."
+                        .into(),
+                ));
+            }
             if health_check(&configured_health_url).await {
                 return Ok(Json(ServerActionResponse {
                     state: "running",
@@ -111,6 +139,7 @@ async fn start_server(
             }));
         }
         *process = None;
+        *state.active_model.lock().await = None;
     }
     if health_check(&configured_health_url).await {
         return Ok(Json(ServerActionResponse {
@@ -119,15 +148,20 @@ async fn start_server(
         }));
     }
 
-    let model_path = state
-        .data_dir
-        .join("models/SmolVLM-256M-Instruct-Q8_0.gguf");
-    if !model_path.is_file() {
-        return Err(ServerError(
-            StatusCode::CONFLICT,
-            "Download the SmolVLM proof-of-life model before starting llama.cpp.".into(),
-        ));
-    }
+    let model_path = super::models::resolve_installed_file(
+        &state.data_dir,
+        &request.repo_id,
+        &request.model_file,
+    )
+    .map_err(|message| ServerError(StatusCode::CONFLICT, message))?;
+    let mmproj_path = request
+        .mmproj_file
+        .as_deref()
+        .map(|file| {
+            super::models::resolve_installed_file(&state.data_dir, &request.repo_id, file)
+                .map_err(|message| ServerError(StatusCode::CONFLICT, message))
+        })
+        .transpose()?;
     let server_path = installed_server_path(&state.data_dir)?;
     let (host, port, _) = server_address(&state)?;
     let log_path = state.data_dir.join("llama-server.log");
@@ -139,9 +173,11 @@ async fn start_server(
     let stdout = log.try_clone().map_err(ServerError::internal)?;
 
     let mut command = Command::new(&server_path);
+    command.arg("--model").arg(&model_path);
+    if let Some(mmproj_path) = &mmproj_path {
+        command.arg("--mmproj").arg(mmproj_path);
+    }
     command
-        .arg("--model")
-        .arg(&model_path)
         .arg("--host")
         .arg(&host)
         .arg("--port")
@@ -166,9 +202,14 @@ async fn start_server(
         )
     })?;
     *process = Some(child);
+    *state.active_model.lock().await = Some(crate::ActiveModel {
+        repo_id: request.repo_id,
+        model_file: request.model_file,
+        mmproj_file: request.mmproj_file,
+    });
     Ok(Json(ServerActionResponse {
         state: "starting",
-        detail: "llama-server started and is loading SmolVLM.".into(),
+        detail: "llama-server started and is loading the selected model.".into(),
     }))
 }
 
@@ -181,6 +222,7 @@ async fn stop_server(
             child.kill().await.map_err(ServerError::internal)?;
         }
         let _ = child.wait().await;
+        *state.active_model.lock().await = None;
     }
     Ok(Json(ServerActionResponse {
         state: "offline",
@@ -258,6 +300,14 @@ async fn health_check(url: &str) -> bool {
         .send()
         .await
         .is_ok_and(|response| response.status().is_success())
+}
+
+pub(crate) async fn external_server_health(state: &AppState) -> bool {
+    if let Ok((_, _, url)) = server_address(state) {
+        health_check(&url).await
+    } else {
+        false
+    }
 }
 
 struct ServerError(StatusCode, String);

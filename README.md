@@ -13,7 +13,7 @@ That community gathering, where chat was a common component, seemed a decently g
 ## Features
 
 * Single binary executable with embedded static web assets.
-* Managed Linux CPU llama.cpp runtime and a downloadable SmolVLM proof-of-life model.
+* Managed Linux CPU llama.cpp runtime and a Hugging Face GGUF model browser.
 * Native parsing of SillyTavern PNG text chunks and JSON character cards.
 * Automatic random greeting selection from character specs.
 * Local SQLite chat session history storage.
@@ -32,7 +32,7 @@ On first startup, Strawberry Social automatically creates the necessary director
 
 This directory houses:
 * `characters/` - Folder for storing character cards and avatars.
-* `models/` - Downloaded GGUF model files.
+* `models/<owner>/<repo>/` - Downloaded GGUF models and optional mmproj companion files.
 * `llama.cpp/` - Managed llama.cpp runtime versions.
 * `sessions/` - Database directory containing `chats.db`.
 * `config.yaml` - Main configuration file.
@@ -168,9 +168,10 @@ ui:
 
 1. Start `strawberry-social` or launch it via the desktop shortcut.
 2. Open **Settings** and install the managed llama.cpp runtime on supported Linux systems.
-3. Download the SmolVLM 256M proof-of-life model and start llama.cpp from Settings, or configure any OpenAI-compatible server in `config.yaml`.
-4. Drop `.json` or `.png` character cards into your platform `characters/` folder or click **+ Upload Card** in the application interface.
-5. Select a character from the roster to start a chat session.
+3. Browse Hugging Face GGUF models in Settings, choose a quantization and optional vision projector, then download and start the model from the downloaded models list. Downloads can be paused, resumed, or cancelled.
+4. To use another OpenAI-compatible server, set `llm.api_base_url` in `config.yaml`.
+5. Drop `.json` or `.png` character cards into your platform `characters/` folder or click **+ Upload Card** in the application interface.
+6. Select a character from the roster to start a chat session.
 
 ## Screenshots
 
