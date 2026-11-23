@@ -162,6 +162,7 @@ async fn install_staged_runtime(
 
     let server_path = find_server_binary(&extracted)?;
     make_executable(&server_path)?;
+    ensure_library_soname_links(&server_path).map_err(RuntimeError::internal)?;
     smoke_test_server(&server_path).await?;
 
     let generation = SystemTime::now()
@@ -440,6 +441,39 @@ fn find_server_binary(root: &Path) -> Result<PathBuf, RuntimeError> {
             "The archive did not contain a llama-server executable.".into(),
         )
     })
+}
+
+pub(crate) fn ensure_library_soname_links(server_path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let Some(directory) = server_path.parent() else {
+            return Ok(());
+        };
+        for entry in fs::read_dir(directory)? {
+            let entry = entry?;
+            let path = entry.path();
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            let Some((stem, version)) = name.split_once(".so.") else {
+                continue;
+            };
+            let Some(major) = version.split('.').next().filter(|value| !value.is_empty()) else {
+                continue;
+            };
+            if !major.chars().all(|value| value.is_ascii_digit()) {
+                continue;
+            }
+            let soname = directory.join(format!("{stem}.so.{major}"));
+            if !soname.exists() {
+                std::os::unix::fs::symlink(entry.file_name(), soname)?;
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(unix)]

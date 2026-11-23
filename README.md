@@ -13,6 +13,7 @@ That community gathering, where chat was a common component, seemed a decently g
 ## Features
 
 * Single binary executable with embedded static web assets.
+* Managed Linux CPU llama.cpp runtime and a downloadable SmolVLM proof-of-life model.
 * Native parsing of SillyTavern PNG text chunks and JSON character cards.
 * Automatic random greeting selection from character specs.
 * Local SQLite chat session history storage.
@@ -31,6 +32,8 @@ On first startup, Strawberry Social automatically creates the necessary director
 
 This directory houses:
 * `characters/` - Folder for storing character cards and avatars.
+* `models/` - Downloaded GGUF model files.
+* `llama.cpp/` - Managed llama.cpp runtime versions.
 * `sessions/` - Database directory containing `chats.db`.
 * `config.yaml` - Main configuration file.
 * `strawberry.log` - Application log file.
@@ -163,9 +166,9 @@ ui:
 
 ## Usage
 
-1. Launch your local LLM server (e.g., LM Studio or KoboldCPP) with an OpenAI-compatible API endpoint enabled on `http://127.0.0.1:5001/v1` (or update `config.yaml` to match your server URL).
-2. Start `strawberry-social` or launch it via the desktop shortcut.
-3. Open `http://127.0.0.1:8080` in your web browser (if not opened automatically).
+1. Start `strawberry-social` or launch it via the desktop shortcut.
+2. Open **Settings** and install the managed llama.cpp runtime on supported Linux systems.
+3. Download the SmolVLM 256M proof-of-life model and start llama.cpp from Settings, or configure any OpenAI-compatible server in `config.yaml`.
 4. Drop `.json` or `.png` character cards into your platform `characters/` folder or click **+ Upload Card** in the application interface.
 5. Select a character from the roster to start a chat session.
 

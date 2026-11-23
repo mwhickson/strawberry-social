@@ -5,7 +5,7 @@ const THEME_KEY = "strawberry-social-theme-v1"; // Used only once to migrate the
 const state = {
     config: {}, characters: [], sessions: [], profiles: [], activeProfileId: null,
     currentSessionId: null, currentCharacter: null, currentCard: null, editingProfileId: null,
-    runtimeInfoLoaded: false, runtimeInfoLoading: false
+    runtimeInfoLoaded: false, runtimeInfoLoading: false, modelInstalled: false
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -19,11 +19,14 @@ async function initializeApp() {
     bindUploads();
     bindProfiles();
     bindSettings();
+    bindModelControls();
     bindCharacterDrawer();
     await loadProfiles();
     applyTheme(state.theme || "dark");
     await Promise.all([loadConfig(), loadCharacters(), loadSessions()]);
     renderProfiles();
+    await Promise.all([loadModelStatus(), refreshServerStatus()]);
+    window.setInterval(refreshServerStatus, 2000);
 }
 
 function bindNavigation() {
@@ -421,6 +424,94 @@ function bindSettings() {
             alert(`Could not save the download preference: ${error.message}`);
         }
     });
+}
+
+function bindModelControls() {
+    $("#download-model-btn").addEventListener("click", downloadProofModel);
+    $("#start-server-btn").addEventListener("click", startManagedServer);
+    $("#stop-server-btn").addEventListener("click", stopManagedServer);
+}
+
+async function loadModelStatus() {
+    try {
+        const response = await fetch("/api/models/status");
+        if (!response.ok) throw new Error(await response.text());
+        const model = await response.json();
+        state.modelInstalled = !!model.installed;
+        $("#model-status").textContent = model.installed
+            ? `${model.name} is installed in the Strawberry Social models folder.`
+            : "This model is not downloaded yet.";
+        $("#download-model-btn").hidden = !!model.installed;
+        $("#start-server-btn").disabled = !model.installed;
+    } catch (error) {
+        $("#model-status").textContent = `Could not check model files: ${error.message}`;
+    }
+}
+
+async function downloadProofModel() {
+    const button = $("#download-model-btn");
+    button.disabled = true;
+    $("#model-status").textContent = "Downloading and verifying the 175 MB GGUF model…";
+    try {
+        const response = await fetch("/api/models/smolvlm-256m", { method: "POST" });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        state.modelInstalled = result.installed;
+        $("#model-status").textContent = `${result.name} downloaded and checksum verified in the models folder.`;
+        await loadModelStatus();
+    } catch (error) {
+        $("#model-status").textContent = `Model download failed: ${error.message}`;
+        button.textContent = "Retry model download";
+        button.hidden = false;
+    } finally { button.disabled = false; }
+}
+
+async function startManagedServer() {
+    const button = $("#start-server-btn");
+    button.disabled = true;
+    $("#model-status").textContent = "Starting llama.cpp and loading SmolVLM…";
+    try {
+        const response = await fetch("/api/runtime-server/start", { method: "POST" });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        $("#model-status").textContent = result.detail;
+        await refreshServerStatus();
+    } catch (error) {
+        $("#model-status").textContent = `Could not start llama.cpp: ${error.message}`;
+    } finally { button.disabled = !state.modelInstalled; }
+}
+
+async function stopManagedServer() {
+    $("#stop-server-btn").disabled = true;
+    try {
+        const response = await fetch("/api/runtime-server/stop", { method: "POST" });
+        if (!response.ok) throw new Error(await response.text());
+        const result = await response.json();
+        $("#model-status").textContent = result.detail;
+        await refreshServerStatus();
+    } catch (error) { $("#model-status").textContent = `Could not stop llama.cpp: ${error.message}`; }
+    finally { $("#stop-server-btn").disabled = false; }
+}
+
+async function refreshServerStatus() {
+    try {
+        const response = await fetch("/api/runtime-server/status");
+        if (!response.ok) throw new Error(await response.text());
+        renderServerStatus(await response.json());
+    } catch (error) {
+        renderServerStatus({ state: "offline", detail: "Strawberry Social cannot reach its local status endpoint." });
+    }
+}
+
+function renderServerStatus(status) {
+    const stateName = ["running", "starting", "offline"].includes(status.state) ? status.state : "offline";
+    $("#server-status-indicator").dataset.state = stateName;
+    $(".workspace-statusbar").dataset.state = stateName;
+    $("#server-status-text").textContent = stateName.charAt(0).toUpperCase() + stateName.slice(1);
+    $("#server-status-detail").textContent = status.detail || "";
+    $("#stop-server-btn").hidden = stateName === "offline" || !status.managed;
+    $("#start-server-btn").hidden = stateName === "running" || stateName === "starting";
+    $("#start-server-btn").disabled = !state.modelInstalled;
 }
 
 async function loadRuntimeInfo(retry = false) {

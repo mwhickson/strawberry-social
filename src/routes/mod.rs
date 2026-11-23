@@ -5,7 +5,9 @@ use std::sync::Arc;
 pub mod characters;
 pub mod chat;
 pub mod config_route;
+pub mod models;
 pub mod runtime_info;
+pub mod runtime_server;
 pub mod user_data;
 
 pub fn create_router(_state: Arc<AppState>) -> Router<Arc<AppState>> {
@@ -19,4 +21,9 @@ pub fn create_router(_state: Arc<AppState>) -> Router<Arc<AppState>> {
             super::routes::user_data::preferences_router(),
         )
         .nest("/api/runtime-info", super::routes::runtime_info::router())
+        .nest(
+            "/api/runtime-server",
+            super::routes::runtime_server::router(),
+        )
+        .nest("/api/models", super::routes::models::router())
 }

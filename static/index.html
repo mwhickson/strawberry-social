@@ -24,6 +24,7 @@
         </aside>
 
         <main class="workspace">
+            <div class="workspace-statusbar" data-state="offline"><span id="server-status-indicator" class="server-status-indicator" data-state="offline"></span><span class="server-status-label">llama.cpp</span><strong id="server-status-text">Offline</strong><span id="server-status-detail" class="server-status-detail">The managed server is stopped.</span></div>
             <section id="view-chat" class="app-view chat-view active" aria-label="Chats">
                 <header class="view-header chat-header">
                     <div><span class="eyebrow">CONVERSATION</span><h1 id="current-chat-title">Choose a character to begin</h1></div>
@@ -40,7 +41,36 @@
 
             <section id="view-settings" class="app-view content-view" aria-label="Settings" hidden>
                 <header class="view-header"><div><span class="eyebrow">PREFERENCES</span><h1>Settings</h1><p class="view-description">Personalize Strawberry Social.</p></div></header>
-                <div class="settings-sections"><section class="panel settings-panel"><div><h2>Appearance</h2><p>Choose the look that feels right.</p></div><label class="field-label" for="theme-select">Theme</label><select class="text-field" id="theme-select"><option value="dark">Dark</option><option value="light">Light</option></select></section><section class="panel settings-panel runtime-panel"><div><span class="eyebrow">LOCAL INFERENCE</span><h2>llama.cpp runtime</h2><p>Check the latest stable llama.cpp release for this platform.</p></div><div class="runtime-details"><div><span class="runtime-label">Detected platform</span><strong id="runtime-platform">Checking…</strong></div><div><span class="runtime-label">Latest stable release</span><span id="runtime-release" class="runtime-release">Checking GitHub…</span></div><div><span class="runtime-label">Runtime archive</span><strong id="runtime-asset">Resolving asset…</strong></div></div><p id="runtime-status" class="field-hint" role="status" aria-live="polite"></p><button id="download-runtime-btn" class="primary-button" type="button" hidden>Download runtime</button><button id="retry-runtime-info" class="secondary-button" type="button" hidden>Retry release check</button><label class="runtime-auto-download"><input id="auto-download-runtime" type="checkbox"><span><strong>Automatically download runtime updates</strong><small>Allows Strawberry Social to download a newer runtime when you open Settings.</small></span></label></section><section class="panel settings-panel"><div><h2>Inference connection</h2><p>Connect to a local OpenAI-compatible inference server.</p></div><label class="field-label" for="api-base-url">API base URL</label><input class="text-field" id="api-base-url" type="url" readonly><p class="field-hint">Connection settings are currently managed in config.yaml.</p></section></div>
+                <div class="settings-sections">
+                    <section class="panel settings-panel">
+                        <div><h2>Appearance</h2><p>Choose the look that feels right.</p></div>
+                        <label class="field-label" for="theme-select">Theme</label>
+                        <select class="text-field" id="theme-select"><option value="dark">Dark</option><option value="light">Light</option></select>
+                    </section>
+                    <section class="panel settings-panel runtime-panel">
+                        <div><span class="eyebrow">LOCAL INFERENCE</span><h2>llama.cpp runtime</h2><p>Check the latest stable llama.cpp release for this platform.</p></div>
+                        <div class="runtime-details">
+                            <div><span class="runtime-label">Detected platform</span><strong id="runtime-platform">Checking…</strong></div>
+                            <div><span class="runtime-label">Latest stable release</span><span id="runtime-release" class="runtime-release">Checking GitHub…</span></div>
+                            <div><span class="runtime-label">Runtime archive</span><strong id="runtime-asset">Resolving asset…</strong></div>
+                        </div>
+                        <p id="runtime-status" class="field-hint" role="status" aria-live="polite"></p>
+                        <button id="download-runtime-btn" class="primary-button" type="button" hidden>Download runtime</button>
+                        <button id="retry-runtime-info" class="secondary-button" type="button" hidden>Retry release check</button>
+                        <label class="runtime-auto-download"><input id="auto-download-runtime" type="checkbox"><span><strong>Automatically download runtime updates</strong><small>Allows Strawberry Social to download a newer runtime when you open Settings.</small></span></label>
+                    </section>
+                    <section class="panel settings-panel model-panel">
+                        <div><span class="eyebrow">PROOF OF LIFE</span><h2>SmolVLM 256M Instruct</h2><p>A small text-chat test model from ggml-org’s GGUF collection. Its companion vision projector is not included, so this setup is text-only.</p></div>
+                        <div class="model-meta"><span>Q8_0 GGUF</span><span>175 MB</span><span>Apache 2.0</span><a href="https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF" target="_blank" rel="noopener noreferrer">Hugging Face ↗</a></div>
+                        <p id="model-status" class="field-hint" role="status" aria-live="polite">Checking model…</p>
+                        <div class="model-actions"><button id="download-model-btn" class="primary-button" type="button">Download model (175 MB)</button><button id="start-server-btn" class="primary-button" type="button" disabled>Start llama.cpp</button><button id="stop-server-btn" class="secondary-button" type="button" hidden>Stop server</button></div>
+                    </section>
+                    <section class="panel settings-panel">
+                        <div><h2>Inference connection</h2><p>The managed server listens on the loopback address and port configured here.</p></div>
+                        <label class="field-label" for="api-base-url">API base URL</label><input class="text-field" id="api-base-url" type="url" readonly>
+                        <p class="field-hint">Connection settings are currently managed in config.yaml.</p>
+                    </section>
+                </div>
             </section>
         </main>
     </div>

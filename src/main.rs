@@ -32,6 +32,8 @@ pub struct AppState {
     pub config: AppConfig,
     pub data_dir: PathBuf,
     pub runtime_download_lock: Arc<tokio::sync::Mutex<()>>,
+    pub model_download_lock: Arc<tokio::sync::Mutex<()>>,
+    pub runtime_server: Arc<tokio::sync::Mutex<Option<tokio::process::Child>>>,
 }
 
 #[tokio::main]
@@ -94,6 +96,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config: config.clone(),
         data_dir: data_dir.to_path_buf(),
         runtime_download_lock: Arc::new(tokio::sync::Mutex::new(())),
+        model_download_lock: Arc::new(tokio::sync::Mutex::new(())),
+        runtime_server: Arc::new(tokio::sync::Mutex::new(None)),
     });
 
     // Build Axum router combining API routes, config, and static asset fallback
@@ -106,7 +110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let addr: SocketAddr = format!("{}:{}", config.server.host, config.server.port).parse()?;
     tracing::info!("Strawberry Social starting on http://{}", addr);
 
-    if config.server.open_browser_on_start {
+    if config.server.open_browser_on_start && std::env::var_os("STRAWBERRY_NO_BROWSER").is_none() {
         let _ = open::that(format!("http://{}", addr));
     }
 
