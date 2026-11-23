@@ -8,6 +8,9 @@ pub fn router() -> Router<Arc<AppState>> {
 
 async fn get_config(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
-) -> Json<crate::config::UiConfig> {
-    Json(state.config.ui.clone())
+) -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "api_base_url": state.config.llm.api_base_url,
+        "theme": state.config.ui.theme,
+    }))
 }

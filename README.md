@@ -35,6 +35,32 @@ This directory houses:
 * `config.yaml` - Main configuration file.
 * `strawberry.log` - Application log file.
 
+## Project Overview
+
+```text
+strawberry-social/
+├── Cargo.toml
+├── static/                   # Embedded Web Assets (Vanilla HTML/CSS/JS)
+│   ├── index.html
+│   ├── css/
+│   │   └── style.css
+│   └── js/
+│       ├── app.js
+│       ├── card_parser.js
+│       └── sse_client.js
+└── src/
+    ├── main.rs               # Server bootstrap & router setup
+    ├── config.rs             # YAML configuration parsing & creation
+    ├── db.rs                 # SQLite connection & migration logic
+    ├── card.rs               # PNG/JSON character card parser (V1/V2/V3)
+    ├── llm.rs                # Proxy to llama.cpp/Koboldcpp API
+    └── routes/               # API endpoint handlers
+        ├── mod.rs
+        ├── chat.rs
+        ├── characters.rs
+        └── config.rs
+```
+
 ## Build Instructions
 
 ### Prerequisites
@@ -153,4 +179,4 @@ ui:
 
 ## Disclaimer
 
-This application was produced using AI (Gemini).
+This application was produced using AI (Gemini, ChatGPT Codex).

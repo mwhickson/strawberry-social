@@ -186,6 +186,14 @@ async fn list_messages(
 #[derive(Deserialize)]
 struct SendMessagePayload {
     content: String,
+    user_profile: Option<UserChatProfile>,
+}
+
+#[derive(Deserialize)]
+struct UserChatProfile {
+    name: String,
+    description: String,
+    instructions: String,
 }
 
 #[derive(Serialize)]
@@ -223,19 +231,29 @@ async fn send_message(
     let card = find_character_card(&state, &character_name);
     let mut llm_messages = Vec::new();
 
+    let mut system_parts = Vec::new();
     if let Some(c) = card {
         let d = c.data;
-        let system_instruction = format!(
+        system_parts.push(format!(
             "You are roleplaying as {}. \
             Description: {} \
             Personality: {} \
             Scenario: {} \
             Instructions: Stay strictly in character. Never break character or refer to yourself as an AI.",
             d.name, d.description, d.personality, d.scenario
+        ));
+    }
+    if let Some(profile) = payload.user_profile {
+        let profile_context = format!(
+            "The user's chat profile is named '{}'. About the user: {}. User-provided chat instructions: {}. Treat this as context about the user's persona; do not impersonate the user.",
+            profile.name, profile.description, profile.instructions
         );
+        system_parts.push(profile_context);
+    }
+    if !system_parts.is_empty() {
         llm_messages.push(ChatMessagePayload {
             role: "system".to_string(),
-            content: system_instruction,
+            content: system_parts.join("\n\n"),
         });
     }
 

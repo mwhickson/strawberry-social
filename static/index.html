@@ -7,72 +7,46 @@
     <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar: Characters & Sessions -->
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <h2>🍓 Strawberry Social</h2>
-                <p class="subtitle">Lightweight AI Chat</p>
-            </div>
-
-            <div class="sidebar-action-bar">
-                <button id="upload-btn" class="action-btn">+ Upload Card</button>
-                <input type="file" id="file-input" accept=".json,.png" style="display: none;">
-            </div>
-
-            <div class="section-title">Character Roster</div>
-            <div id="character-list" class="roster-list">
-                <div class="loading-text">Loading characters...</div>
-            </div>
-
-            <div class="section-title">Chat Sessions</div>
-            <div id="session-list" class="session-list">
-                <div class="loading-text">No active sessions.</div>
-            </div>
+    <div class="app-shell">
+        <aside class="app-sidebar">
+            <a class="brand" href="#chat" aria-label="Strawberry Social home"><span class="brand-mark">🍓</span><span><strong>Strawberry Social</strong><small>Character chat</small></span></a>
+            <nav class="primary-nav" aria-label="Main navigation">
+                <button class="nav-item active" data-view="chat"><span>▤</span> Chats</button>
+                <button class="nav-item" data-view="profiles"><span>◉</span> Profiles</button>
+                <button class="nav-item" data-view="settings"><span>⚙</span> Settings</button>
+            </nav>
+            <div class="sidebar-section-heading"><span>CHARACTERS</span><button id="upload-btn" class="icon-button" title="Upload character card">＋</button></div>
+            <input type="file" id="file-input" accept=".json,.png" hidden>
+            <div id="character-list" class="roster-list"><div class="loading-text">Loading characters...</div></div>
+            <div class="sidebar-section-heading session-heading">RECENT CHATS</div>
+            <div id="session-list" class="session-list"><div class="loading-text">No active sessions.</div></div>
+            <div class="sidebar-profile" id="sidebar-profile"></div>
         </aside>
 
-        <!-- Main Chat Area -->
-        <main class="chat-area">
-            <header class="chat-header">
-                <div class="chat-header-actions">
-                    <span id="current-chat-title">Select a character to start chatting</span>
-                    <button id="profile-btn" class="profile-toggle-btn" style="display: none;" title="View Character Profile">ℹ️ Profile</button>
-                </div>
-            </header>
+        <main class="workspace">
+            <section id="view-chat" class="app-view chat-view active" aria-label="Chats">
+                <header class="view-header chat-header">
+                    <div><span class="eyebrow">CONVERSATION</span><h1 id="current-chat-title">Choose a character to begin</h1></div>
+                    <div class="header-actions"><label class="profile-select-label" for="chat-profile-select">Chat as</label><select id="chat-profile-select" aria-label="Profile to use for chat"></select><button id="profile-btn" class="secondary-button" hidden>Character details</button></div>
+                </header>
+                <div id="chat-messages" class="chat-messages"><div class="welcome-banner"><div class="welcome-icon">🍓</div><h2>A little conversation?</h2><p>Choose a character from the sidebar to start a chat.</p></div></div>
+                <footer class="chat-input-area"><form id="chat-form" class="chat-form"><input type="text" id="message-input" placeholder="Write a message..." autocomplete="off" disabled><button type="submit" id="send-btn" disabled>Send <span>↗</span></button></form></footer>
+            </section>
 
-            <div id="chat-messages" class="chat-messages">
-                <div class="welcome-banner">
-                    <h3>Welcome to Strawberry Social</h3>
-                    <p>Select a character card from your <code>/characters</code> folder using the sidebar to begin.</p>
-                </div>
-            </div>
+            <section id="view-profiles" class="app-view content-view" aria-label="Profiles" hidden>
+                <header class="view-header"><div><span class="eyebrow">YOUR IDENTITY</span><h1>Profiles</h1><p class="view-description">Create personas to use when chatting with characters.</p></div><button id="new-profile-btn" class="primary-button">＋ New profile</button></header>
+                <div class="profile-layout"><div id="profile-list" class="profile-list"></div><form id="profile-form" class="panel profile-editor"><div class="panel-heading"><div><span class="eyebrow">PROFILE DETAILS</span><h2 id="profile-editor-title">New profile</h2></div></div><input id="profile-id" type="hidden"><label class="field-label" for="profile-name">Name</label><input class="text-field" id="profile-name" maxlength="80" placeholder="What should characters call you?" required><label class="field-label" for="profile-description">About you</label><textarea class="text-field" id="profile-description" rows="5" placeholder="A short description of your persona..."></textarea><label class="field-label" for="profile-instructions">Chat instructions</label><textarea class="text-field" id="profile-instructions" rows="6" placeholder="How should characters understand or interact with you?"></textarea><p class="field-hint">These details are included as context when you send a chat message.</p><div class="form-actions"><button type="button" id="delete-profile-btn" class="danger-button" hidden>Delete</button><span class="form-spacer"></span><button type="button" id="cancel-profile-btn" class="secondary-button">Cancel</button><button type="submit" class="primary-button">Save profile</button></div></form></div>
+            </section>
 
-            <footer class="chat-input-area">
-                <form id="chat-form" class="chat-form">
-                    <input
-                        type="text"
-                        id="message-input"
-                        placeholder="Type a message..."
-                        autocomplete="off"
-                        disabled
-                    >
-                    <button type="submit" id="send-btn" disabled>Send</button>
-                </form>
-            </footer>
+            <section id="view-settings" class="app-view content-view" aria-label="Settings" hidden>
+                <header class="view-header"><div><span class="eyebrow">PREFERENCES</span><h1>Settings</h1><p class="view-description">Personalize Strawberry Social.</p></div></header>
+                <div class="settings-sections"><section class="panel settings-panel"><div><h2>Appearance</h2><p>Choose the look that feels right.</p></div><label class="field-label" for="theme-select">Theme</label><select class="text-field" id="theme-select"><option value="dark">Dark</option><option value="light">Light</option></select></section><section class="panel settings-panel"><div><h2>Inference connection</h2><p>Connect to a local OpenAI-compatible inference server. Built-in engine management can be added here.</p></div><label class="field-label" for="api-base-url">API base URL</label><input class="text-field" id="api-base-url" type="url" readonly><p class="field-hint">Connection settings are currently managed in config.yaml.</p></section></div>
+            </section>
         </main>
     </div>
 
     <div id="profile-overlay" class="profile-overlay"></div>
-    <div id="profile-drawer" class="profile-drawer">
-        <div class="drawer-header">
-            <h2 id="drawer-name">Character Name</h2>
-            <button id="close-drawer-btn" class="close-btn">&times;</button>
-        </div>
-        <div class="drawer-body" id="drawer-body-content">
-            <!-- Populated dynamically -->
-        </div>
-    </div>
-
+    <aside id="profile-drawer" class="profile-drawer" aria-label="Character details"><div class="drawer-header"><h2 id="drawer-name">Character</h2><button id="close-drawer-btn" class="close-btn" aria-label="Close">&times;</button></div><div class="drawer-body" id="drawer-body-content"></div></aside>
     <script src="/js/app.js"></script>
 </body>
 </html>
