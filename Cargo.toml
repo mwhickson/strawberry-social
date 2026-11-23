@@ -7,9 +7,8 @@ description = "Lightweight, local-first LLM character chat client"
 
 [dependencies]
 # Web Framework & Async Runtime
-axum = { version = "0.7", features = ["macros", "multipart"] }
-tokio = { version = "1.38", features = ["full"] }
-tower-http = { version = "0.5", features = ["cors", "fs", "trace"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "multipart", "query", "tokio"] }
+tokio = { version = "1.38", default-features = false, features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "sync", "time"] }
 rust-embed = "8.4"
 
 # Serialization & Config
@@ -19,16 +18,13 @@ serde_yaml = "0.9"
 
 # HTTP Client (using rustls-tls to avoid OpenSSL system requirements)
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
-tokio-stream = "0.1"
-flate2 = "1.0"
-tar = "0.4"
+tokio-stream = { version = "0.1", default-features = false }
 sha2 = "0.10"
 
 # Database & Memory
 rusqlite = { version = "0.31", features = ["bundled"] }
 
 # Image & Base64 processing (Card metadata extraction)
-image = "0.25"
 base64 = "0.22"
 
 # Utilities & Logging
@@ -38,3 +34,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 mime_guess = "2.0"
 open = "5.1"
 rand = "0.8"
+
+[target.'cfg(not(target_os = "windows"))'.dependencies]
+flate2 = "1.0"
+tar = "0.4"
+
+[profile.release]
+strip = "symbols"
