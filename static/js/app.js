@@ -1,6 +1,6 @@
 const PROFILE_STORAGE_KEY = "strawberry-social-profiles-v1";
 const ACTIVE_PROFILE_KEY = "strawberry-social-active-profile-v1";
-const THEME_KEY = "strawberry-social-theme-v1";
+const THEME_KEY = "strawberry-social-theme-v1"; // Used only once to migrate the previous browser preference.
 
 const state = {
     config: {}, characters: [], sessions: [], profiles: [], activeProfileId: null,
@@ -19,8 +19,8 @@ async function initializeApp() {
     bindProfiles();
     bindSettings();
     bindCharacterDrawer();
-    loadProfiles();
-    applyTheme(localStorage.getItem(THEME_KEY) || "dark");
+    await loadProfiles();
+    applyTheme(state.theme || "dark");
     await Promise.all([loadConfig(), loadCharacters(), loadSessions()]);
     renderProfiles();
 }
@@ -49,7 +49,6 @@ async function loadConfig() {
         if (!response.ok) throw new Error(await response.text());
         state.config = await response.json();
         $("#api-base-url").value = state.config.api_base_url || "";
-        if (!localStorage.getItem(THEME_KEY)) applyTheme(state.config.theme || "dark");
     } catch (error) { console.error("Failed to load settings:", error); }
 }
 
@@ -263,15 +262,58 @@ function bindUploads() {
     });
 }
 
-function loadProfiles() {
-    try {
-        const profiles = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || "[]");
-        state.profiles = Array.isArray(profiles) ? profiles : [];
-    } catch { state.profiles = []; }
-    state.activeProfileId = localStorage.getItem(ACTIVE_PROFILE_KEY);
-    if (!state.profiles.some(profile => profile.id === state.activeProfileId)) state.activeProfileId = state.profiles[0]?.id || null;
+async function loadProfiles() {
+    const response = await fetch("/api/profiles");
+    if (!response.ok) throw new Error(`Could not load profiles: ${await response.text()}`);
+    const stored = await response.json();
+    state.profiles = stored.profiles || [];
+    state.activeProfileId = stored.active_profile_id || null;
+    state.theme = stored.theme || "dark";
+
+    // Import profiles saved by the previous browser-local version once, then remove that copy.
+    let legacyProfiles = [];
+    try { legacyProfiles = JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || "[]"); } catch { /* ignore malformed legacy data */ }
+    if (Array.isArray(legacyProfiles) && legacyProfiles.length) {
+        for (const profile of legacyProfiles) {
+            const saveResponse = await fetch("/api/profiles", {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile)
+            });
+            if (!saveResponse.ok) throw new Error(`Could not import profile: ${await saveResponse.text()}`);
+        }
+        if (!state.activeProfileId) {
+            const legacyActiveId = localStorage.getItem(ACTIVE_PROFILE_KEY);
+            const activeId = legacyProfiles.some(profile => profile.id === legacyActiveId) ? legacyActiveId : legacyProfiles[0].id;
+            await setActiveProfile(activeId);
+        }
+        localStorage.removeItem(PROFILE_STORAGE_KEY);
+        localStorage.removeItem(ACTIVE_PROFILE_KEY);
+        const refresh = await fetch("/api/profiles");
+        if (refresh.ok) {
+            const updated = await refresh.json(); state.profiles = updated.profiles || [];
+            state.activeProfileId = updated.active_profile_id || null; state.theme = updated.theme || state.theme;
+        }
+    }
+    const legacyTheme = localStorage.getItem(THEME_KEY);
+    if (legacyTheme === "dark" || legacyTheme === "light") {
+        const themeResponse = await fetch("/api/preferences/theme", {
+            method: "PUT", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ theme: legacyTheme })
+        });
+        if (!themeResponse.ok) throw new Error(`Could not import theme preference: ${await themeResponse.text()}`);
+        state.theme = legacyTheme;
+        localStorage.removeItem(THEME_KEY);
+    }
+    localStorage.removeItem(PROFILE_STORAGE_KEY);
+    localStorage.removeItem(ACTIVE_PROFILE_KEY);
 }
-function saveProfiles() { localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(state.profiles)); }
+async function setActiveProfile(id) {
+    const response = await fetch("/api/profiles/active", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ active_profile_id: id || null })
+    });
+    if (!response.ok) throw new Error(`Could not set active profile: ${await response.text()}`);
+    state.activeProfileId = id || null;
+}
 function getActiveProfile() { return state.profiles.find(profile => profile.id === state.activeProfileId) || null; }
 
 function renderProfiles() {
@@ -307,9 +349,7 @@ function bindProfiles() {
     $("#delete-profile-btn").addEventListener("click", deleteProfile);
     $("#profile-form").addEventListener("submit", saveProfile);
     $("#chat-profile-select").addEventListener("change", event => {
-        state.activeProfileId = event.target.value || null;
-        if (state.activeProfileId) localStorage.setItem(ACTIVE_PROFILE_KEY, state.activeProfileId); else localStorage.removeItem(ACTIVE_PROFILE_KEY);
-        renderProfiles();
+        setActiveProfile(event.target.value || null).then(renderProfiles).catch(error => alert(error.message));
     });
 }
 
@@ -318,35 +358,50 @@ function editProfile(id) {
     state.editingProfileId = id; $("#profile-id").value = id; $("#profile-name").value = profile.name;
     $("#profile-description").value = profile.description || ""; $("#profile-instructions").value = profile.instructions || "";
     $("#profile-editor-title").textContent = "Edit profile"; $("#delete-profile-btn").hidden = false;
-    state.activeProfileId = id; localStorage.setItem(ACTIVE_PROFILE_KEY, id); renderProfiles();
+    setActiveProfile(id).then(renderProfiles).catch(error => alert(error.message));
 }
 function resetProfileForm() {
     state.editingProfileId = null; $("#profile-form").reset(); $("#profile-id").value = "";
     $("#profile-editor-title").textContent = "New profile"; $("#delete-profile-btn").hidden = true;
 }
-function saveProfile(event) {
+async function saveProfile(event) {
     event.preventDefault();
     const profile = {
         id: state.editingProfileId || crypto.randomUUID(), name: $("#profile-name").value.trim(),
         description: $("#profile-description").value.trim(), instructions: $("#profile-instructions").value.trim()
     };
     if (!profile.name) return;
-    const index = state.profiles.findIndex(item => item.id === profile.id);
-    if (index < 0) state.profiles.push(profile); else state.profiles[index] = profile;
-    state.activeProfileId = profile.id; localStorage.setItem(ACTIVE_PROFILE_KEY, profile.id); saveProfiles(); renderProfiles(); resetProfileForm();
+    try {
+        const response = await fetch("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile) });
+        if (!response.ok) throw new Error(await response.text());
+        await setActiveProfile(profile.id);
+        await refreshProfiles(); renderProfiles(); resetProfileForm();
+    } catch (error) { alert(`Could not save profile: ${error.message}`); }
 }
-function deleteProfile() {
+async function refreshProfiles() {
+    const response = await fetch("/api/profiles"); if (!response.ok) throw new Error(await response.text());
+    const data = await response.json(); state.profiles = data.profiles || []; state.activeProfileId = data.active_profile_id || null;
+}
+async function deleteProfile() {
     const id = state.editingProfileId; if (!id) return;
-    state.profiles = state.profiles.filter(profile => profile.id !== id);
-    if (state.activeProfileId === id) state.activeProfileId = state.profiles[0]?.id || null;
-    if (state.activeProfileId) localStorage.setItem(ACTIVE_PROFILE_KEY, state.activeProfileId); else localStorage.removeItem(ACTIVE_PROFILE_KEY);
-    saveProfiles(); renderProfiles(); resetProfileForm();
+    try {
+        const response = await fetch(`/api/profiles/${encodeURIComponent(id)}`, { method: "DELETE" });
+        if (!response.ok) throw new Error(await response.text());
+        await refreshProfiles();
+        if (!state.activeProfileId && state.profiles[0]) await setActiveProfile(state.profiles[0].id);
+        await refreshProfiles(); renderProfiles(); resetProfileForm();
+    } catch (error) { alert(`Could not delete profile: ${error.message}`); }
 }
 
 function bindSettings() {
-    $("#theme-select").value = localStorage.getItem(THEME_KEY) || "dark";
-    $("#theme-select").addEventListener("change", event => {
-        applyTheme(event.target.value); localStorage.setItem(THEME_KEY, event.target.value);
+    $("#theme-select").value = state.theme || "dark";
+    $("#theme-select").addEventListener("change", async event => {
+        const theme = event.target.value;
+        try {
+            const response = await fetch("/api/preferences/theme", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme }) });
+            if (!response.ok) throw new Error(await response.text());
+            state.theme = theme; applyTheme(theme);
+        } catch (error) { alert(`Could not save theme: ${error.message}`); event.target.value = state.theme; }
     });
 }
 function applyTheme(theme) {

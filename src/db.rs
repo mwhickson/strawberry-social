@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::path::Path;
 use serde::{Serialize, Deserialize};
 
@@ -20,6 +20,14 @@ pub struct ChatMessage {
     pub timestamp: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct UserProfile {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub instructions: String,
+}
+
 pub struct Database {
     conn: Connection,
 }
@@ -35,6 +43,23 @@ impl Database {
                 character_card_json TEXT,
                 title TEXT NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )",
+            [],
+        )?;
+
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS user_profiles (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                instructions TEXT NOT NULL DEFAULT ''
+            )",
+            [],
+        )?;
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS app_preferences (
+                key TEXT PRIMARY KEY NOT NULL,
+                value TEXT NOT NULL
             )",
             [],
         )?;
@@ -127,6 +152,49 @@ impl Database {
             messages.push(msg?);
         }
         Ok(messages)
+    }
+
+    pub fn get_profiles(&self) -> Result<Vec<UserProfile>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, description, instructions FROM user_profiles ORDER BY name COLLATE NOCASE",
+        )?;
+        let rows = stmt.query_map([], |row| Ok(UserProfile {
+            id: row.get(0)?, name: row.get(1)?, description: row.get(2)?, instructions: row.get(3)?,
+        }))?;
+        rows.collect()
+    }
+
+    pub fn save_profile(&self, profile: &UserProfile) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO user_profiles (id, name, description, instructions) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, instructions = excluded.instructions",
+            params![profile.id, profile.name, profile.description, profile.instructions],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_profile(&self, id: &str) -> Result<()> {
+        self.conn.execute("DELETE FROM user_profiles WHERE id = ?1", params![id])?;
+        self.conn.execute(
+            "DELETE FROM app_preferences WHERE key = 'active_profile_id' AND value = ?1",
+            params![id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_preference(&self, key: &str) -> Result<Option<String>> {
+        self.conn.query_row(
+            "SELECT value FROM app_preferences WHERE key = ?1", params![key], |row| row.get(0),
+        ).optional()
+    }
+
+    pub fn set_preference(&self, key: &str, value: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO app_preferences (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
     }
 }
 
