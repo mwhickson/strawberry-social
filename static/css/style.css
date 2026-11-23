@@ -526,3 +526,16 @@ body.light-theme { --bg-primary: #f5f4f6; --bg-secondary: #fff; --bg-tertiary: #
 .model-browser-filters { grid-template-columns: minmax(170px, 1.3fr) minmax(135px, .9fr) minmax(135px, .9fr) auto; margin: 0; }
 .model-browser-filters input[type="search"] { margin-top: 6px; }
 @media (max-width: 650px) { .model-browser-filters { grid-template-columns: 1fr 1fr; } .model-browser-filters label:first-child { grid-column: 1 / -1; } }
+
+/* Persistent app status and deliberate shutdown control */
+.workspace-statusbar { gap: 9px; }
+.application-status { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; margin-left: auto; white-space: nowrap; }
+.application-status-indicator { width: 9px; height: 9px; flex: 0 0 9px; border-radius: 50%; background: #32a86b; box-shadow: 0 0 0 3px color-mix(in srgb, #32a86b 17%, transparent); }
+.application-status strong { color: #218653; font-size: .72rem; font-weight: 650; }
+.application-status[data-state="closing"] .application-status-indicator { background: #d7952d; box-shadow: 0 0 0 3px color-mix(in srgb, #d7952d 17%, transparent); }
+.application-status[data-state="closing"] strong { color: #a86e16; }
+.shutdown-button { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 6px 9px; color: #c83e49; background: color-mix(in srgb, #dc535b 8%, var(--bg-secondary)); border: 1px solid color-mix(in srgb, #dc535b 42%, var(--border)); border-radius: 7px; font: inherit; font-size: .72rem; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.shutdown-button:hover { color: #fff; background: #c83e49; border-color: #c83e49; }
+.shutdown-button:disabled { opacity: .6; cursor: wait; }
+.installed-models-panel { margin-bottom: 18px; }
+@media (max-width: 560px) { .application-status strong { display: none; }.shutdown-button { padding: 6px 8px; } }

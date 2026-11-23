@@ -7,7 +7,7 @@ const state = {
     currentSessionId: null, currentCharacter: null, currentCard: null, editingProfileId: null,
     runtimeInfoLoaded: false, runtimeInfoLoading: false,
     serverStatus: null, installedModels: [], selectedModelFiles: null, downloadId: null,
-    modelBrowserLoaded: false, modelBrowserLoading: false, lastDownloadStatus: "idle"
+    modelBrowserLoaded: false, modelBrowserLoading: false, lastDownloadStatus: "idle", dismissedDownloadId: null
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -22,6 +22,7 @@ async function initializeApp() {
     bindProfiles();
     bindSettings();
     bindModelControls();
+    bindApplicationControls();
     bindCharacterDrawer();
     await loadProfiles();
     applyTheme(state.theme || "dark");
@@ -36,6 +37,41 @@ function bindNavigation() {
     window.addEventListener("hashchange", () => navigate(location.hash.slice(1) || "chat", false));
     const initial = location.hash.slice(1);
     if (["chat", "profiles", "models", "settings"].includes(initial)) navigate(initial, false);
+}
+
+function bindApplicationControls() {
+    const button = $("#shutdown-app-btn");
+    const status = $("#application-status-text");
+    button.addEventListener("click", async () => {
+        const confirmed = window.confirm(
+            "Close Strawberry Social now? This stops the web server and any managed llama.cpp process, and disconnects open chats."
+        );
+        if (!confirmed) return;
+
+        button.disabled = true;
+        setApplicationStatus("closing", "Closing…");
+        status.textContent = "Closing…";
+        try {
+            const response = await fetch("/api/application/shutdown", { method: "POST" });
+            if (!response.ok) throw new Error(await response.text());
+            setApplicationStatus("closing", "Closing app");
+        } catch (error) {
+            setApplicationStatus("running", "App running");
+            button.disabled = false;
+            window.alert(`Could not close Strawberry Social: ${error.message}`);
+        }
+    });
+    $("#dismiss-model-download-btn").addEventListener("click", () => {
+        state.dismissedDownloadId = state.downloadId;
+        $("#model-download-progress").hidden = true;
+    });
+}
+
+function setApplicationStatus(stateName, label) {
+    const status = $(".application-status");
+    status.dataset.state = stateName;
+    status.setAttribute("aria-label", `Strawberry Social is ${stateName}`);
+    $("#application-status-text").textContent = label;
 }
 
 function navigate(view, updateHash = true) {
@@ -623,6 +659,10 @@ async function refreshDownloadStatus() {
 function renderDownloadStatus(job) {
     const panel = $("#model-download-progress");
     if (job.status === "idle") { panel.hidden = true; return; }
+    if (["completed", "cancelled", "failed"].includes(job.status) && job.id && state.dismissedDownloadId === job.id) {
+        panel.hidden = true;
+        return;
+    }
     panel.hidden = false;
     $("#download-progress-title").textContent = `${job.repo_id || "Model"} · ${job.status}`;
     const percent = job.total_bytes > 0 ? Math.min(100, Math.floor(job.downloaded_bytes * 100 / job.total_bytes)) : 0;
@@ -635,6 +675,7 @@ function renderDownloadStatus(job) {
     $("#pause-model-download-btn").hidden = !active || job.status !== "downloading";
     $("#resume-model-download-btn").hidden = job.status !== "paused";
     $("#cancel-model-download-btn").hidden = !active;
+    $("#dismiss-model-download-btn").hidden = active;
     if (!active && job.status !== "completed") $("#model-browser-status").textContent = job.detail;
     if (job.status === "completed") $("#model-browser-status").textContent = job.detail;
 }

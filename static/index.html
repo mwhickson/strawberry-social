@@ -25,7 +25,11 @@
         </aside>
 
         <main class="workspace">
-            <div class="workspace-statusbar" data-state="offline"><span id="server-status-indicator" class="server-status-indicator" data-state="offline"></span><span class="server-status-label">llama.cpp</span><strong id="server-status-text">Offline</strong><span id="server-status-detail" class="server-status-detail">The managed server is stopped.</span></div>
+            <div class="workspace-statusbar" data-state="offline">
+                <span id="server-status-indicator" class="server-status-indicator" data-state="offline"></span><span class="server-status-label">llama.cpp</span><strong id="server-status-text">Offline</strong><span id="server-status-detail" class="server-status-detail">The managed server is stopped.</span>
+                <div class="application-status" data-state="running" role="status" aria-label="Strawberry Social is running"><span class="application-status-indicator"></span><strong id="application-status-text">App running</strong></div>
+                <button id="shutdown-app-btn" class="shutdown-button" type="button" title="Closing the app stops the web server and managed llama.cpp process."><span aria-hidden="true">⏻</span> Close app</button>
+            </div>
             <section id="view-chat" class="app-view chat-view active" aria-label="Chats">
                 <header class="view-header chat-header">
                     <div><span class="eyebrow">CONVERSATION</span><h1 id="current-chat-title">Choose a character to begin</h1></div>
@@ -82,6 +86,10 @@
             <section id="view-models" class="app-view content-view" aria-label="Models" hidden>
                 <header class="view-header"><div><span class="eyebrow">MODEL LIBRARY</span><h1>Models</h1><p class="view-description">Find llama.cpp compatible GGUF models on Hugging Face, or manage models you have downloaded.</p></div></header>
                 <div class="settings-sections model-sections">
+                    <section class="panel settings-panel installed-models-panel">
+                        <div><span class="eyebrow">YOUR LIBRARY</span><h2>Downloaded models</h2><p>Start a model you already have, or remove it from your library.</p></div>
+                        <div id="installed-models" class="installed-model-list"><p class="field-hint">Checking your models folder…</p></div>
+                    </section>
                     <section class="panel settings-panel model-browser-panel">
                         <div><h2>Browse Hugging Face GGUF models</h2><p>Explore trending llama.cpp compatible text-generation models, then choose a quantization and optional vision projector.</p></div>
                         <form id="model-search-form" class="model-browser-filters">
@@ -104,10 +112,9 @@
                             <div class="download-progress-heading"><strong id="download-progress-title">Downloading model</strong><span id="download-progress-percent">0%</span></div>
                             <progress id="model-download-progress-bar" max="100" value="0"></progress>
                             <p id="download-progress-detail" class="field-hint"></p>
-                            <div class="model-actions"><button id="pause-model-download-btn" class="secondary-button" type="button">Pause</button><button id="resume-model-download-btn" class="secondary-button" type="button" hidden>Resume</button><button id="cancel-model-download-btn" class="danger-button" type="button">Cancel download</button></div>
+                            <div class="model-actions"><button id="pause-model-download-btn" class="secondary-button" type="button">Pause</button><button id="resume-model-download-btn" class="secondary-button" type="button" hidden>Resume</button><button id="cancel-model-download-btn" class="danger-button" type="button">Cancel download</button><button id="dismiss-model-download-btn" class="secondary-button" type="button" hidden>Close</button></div>
                         </section>
                         <div id="model-search-results" class="model-search-results" aria-label="Hugging Face model results"></div>
-                        <div class="installed-models-section"><h2>Downloaded models</h2><div id="installed-models" class="installed-model-list"><p class="field-hint">Checking your models folder…</p></div></div>
                     </section>
                 </div>
             </section>

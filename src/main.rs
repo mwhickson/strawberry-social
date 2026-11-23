@@ -36,6 +36,7 @@ pub struct AppState {
     pub model_download: Arc<tokio::sync::Mutex<Option<routes::models::DownloadJob>>>,
     pub runtime_server: Arc<tokio::sync::Mutex<Option<tokio::process::Child>>>,
     pub active_model: Arc<tokio::sync::Mutex<Option<ActiveModel>>>,
+    pub shutdown: Arc<tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -103,6 +104,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load or generate config.yaml in the standard directory
     let config = AppConfig::load_or_create(&config_path)?;
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
     let state = Arc::new(AppState {
         config: config.clone(),
         generation: Arc::new(tokio::sync::RwLock::new((&config.llm).into())),
@@ -111,6 +113,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         model_download: Arc::new(tokio::sync::Mutex::new(None)),
         runtime_server: Arc::new(tokio::sync::Mutex::new(None)),
         active_model: Arc::new(tokio::sync::Mutex::new(None)),
+        shutdown: Arc::new(tokio::sync::Mutex::new(Some(shutdown_tx))),
     });
 
     // Build Axum router combining API routes, config, and static asset fallback
@@ -128,7 +131,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .with_graceful_shutdown(async {
+        let _ = shutdown_rx.await;
+    })
+    .await?;
 
     Ok(())
 }

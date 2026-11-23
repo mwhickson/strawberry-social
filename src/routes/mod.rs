@@ -2,6 +2,7 @@ use crate::AppState;
 use axum::Router;
 use std::sync::Arc;
 
+pub mod application;
 pub mod characters;
 pub mod chat;
 pub mod config_route;
@@ -15,6 +16,7 @@ pub fn create_router(_state: Arc<AppState>) -> Router<Arc<AppState>> {
         .nest("/api/characters", super::routes::characters::router())
         .nest("/api/chat", super::routes::chat::router())
         .nest("/api/config", super::routes::config_route::router()) // <-- Wire it up here!
+        .nest("/api/application", super::routes::application::router())
         .nest("/api/profiles", super::routes::user_data::profiles_router())
         .nest(
             "/api/preferences",
