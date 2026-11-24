@@ -43,25 +43,27 @@ This directory houses:
 ```text
 strawberry-social/
 ├── Cargo.toml
-├── static/                   # Embedded Web Assets (Vanilla HTML/CSS/JS)
-│   ├── index.html
-│   ├── css/
-│   │   └── style.css
-│   └── js/
-│       ├── app.js
-│       ├── card_parser.js
-│       └── sse_client.js
-└── src/
-    ├── main.rs               # Server bootstrap & router setup
-    ├── config.rs             # YAML configuration parsing & creation
-    ├── db.rs                 # SQLite connection & migration logic
-    ├── card.rs               # PNG/JSON character card parser (V1/V2/V3)
-    ├── llm.rs                # Proxy to llama.cpp/Koboldcpp API
-    └── routes/               # API endpoint handlers
-        ├── mod.rs
-        ├── chat.rs
-        ├── characters.rs
-        └── config.rs
+├── src/
+│   ├── card.rs               # PNG/JSON character card parser (V1/V2/V3)
+│   ├── config.rs             # YAML configuration parsing & creation
+│   ├── db.rs                 # SQLite connection & migration logic
+│   ├── llm.rs                # Proxy to llama.cpp/Koboldcpp API
+│   ├── main.rs               # Server bootstrap & router setup
+│   └── routes/               # API endpoint handlers
+│       ├── application.rs
+│       ├── characters.rs
+│       ├── config_route.rs
+│       ├── mod.rs
+│       ├── models.rs
+│       ├── runtime_info.rs
+│       ├── runtime_server.rs
+│       └── user_data.rs
+└── static/                   # Embedded Web Assets (Vanilla HTML/CSS/JS)
+    ├── css/
+    │   └── style.css
+    ├── js/
+    │   ├── app.js
+    └── index.html
 ```
 
 ## Build Instructions
@@ -175,11 +177,17 @@ ui:
 
 ## Screenshots
 
-![Screenshot (Main Window)](screenshot-1.png)
+![Screenshot (Chat)](screenshot-chat.png)
 
-![Screenshot (Character Profile sidebar)](screenshot-2.png)
+![Screenshot (Character Profile sidebar)](screenshot-character-profile.png)
 
-![Screenshot (Light Theme)](screenshot-3.png)
+![Screenshot (Models)](screenshot-models.png)
+
+![Screenshot (Profiles)](screenshot-profiles.png)
+
+![Screenshot (Settings)](screenshot-settings.png)
+
+![Screenshot (Light Theme)](screenshot-light-mode.png)
 
 ## Disclaimer
 
