@@ -523,6 +523,15 @@ body.light-theme { --bg-primary: #f5f4f6; --bg-secondary: #fff; --bg-tertiary: #
 .speech-range-grid output { color: var(--text-secondary); font-weight: 400; }
 .message-speak-button { margin-top: 8px; padding: 4px 8px; color: var(--text-secondary); background: transparent; border: 1px solid var(--border); border-radius: 6px; font: inherit; font-size: .72rem; cursor: pointer; }
 .message-speak-button:hover { color: var(--text-primary); border-color: var(--accent); }
+.character-speech-section .speech-toggle { margin-bottom: 12px; }
+.character-speech-section .field-label { margin-top: 12px; }
+.character-speech-section select[size] { padding: 4px; }
+.character-speech-section input[type="range"] { padding: 5px 2px; accent-color: var(--accent); }
+.character-speech-section output { color: var(--text-secondary); font-weight: 400; }
+.character-speech-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 12px; }
+.character-speech-section > .field-hint { margin: 0 0 8px; }
+.character-speech-actions button { padding: 7px 9px; font-size: .72rem; }
+.character-speech-section [hidden] { display: none !important; }
 @media (max-width: 600px) { .generation-field-grid { grid-template-columns: 1fr; gap: 4px; } }
 .model-result { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 14px; row-gap: 10px; }
 .model-result-main { grid-column: 1 / -1; }

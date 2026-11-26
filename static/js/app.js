@@ -11,6 +11,7 @@ const state = {
     serverStatus: null, installedModels: [], selectedModelFiles: null, downloadId: null,
     modelBrowserLoaded: false, modelBrowserLoading: false, lastDownloadStatus: "idle", dismissedDownloadId: null,
     speechPrefs: { ...DEFAULT_SPEECH_PREFS }, speechVoices: [], speechVoiceEntries: [], speechRequest: 0, speechVoiceRetryCount: 0,
+    currentCharacterSpeechSettings: null, characterDrawerVisibleVoiceCount: 100,
     speechVisibleVoiceCount: 100
 };
 
@@ -151,15 +152,18 @@ function renderCharacters() {
 async function createSession(character) {
     try {
         cancelSpeech();
+        closeCharacterDrawer();
         const response = await fetch("/api/chat/sessions", {
             method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ character_name: character.name, title: `Chat with ${character.name}` })
+            body: JSON.stringify({ character_name: character.name, character_hash: character.id, user_profile: getActiveProfile(), title: `Chat with ${character.name}` })
         });
         if (!response.ok) throw new Error(await response.text());
         const session = await response.json();
-        state.currentCharacter = character;
-        state.currentCard = character;
+        state.currentCharacter = { ...character, id: session.character_hash || character.id };
+        state.currentCard = parseCard(session.character_card_json) || character;
+        if (state.currentCard) state.currentCard.character_hash = state.currentCharacter.id;
         state.currentSessionId = session.id;
+        await loadCharacterSpeechSettings(state.currentCharacter.id);
         renderCharacters();
         renderChatHeader(`Chat with ${character.name}`, true);
         setChatEnabled(true);
@@ -200,11 +204,19 @@ function renderSessions() {
 
 async function switchSession(session) {
     cancelSpeech();
+    closeCharacterDrawer();
     state.currentSessionId = session.id;
     const card = parseCard(session.character_card_json);
-    state.currentCard = card;
-    state.currentCharacter = card ? { name: session.character_name, avatar_url: card.avatar_url || null } : { name: session.character_name };
-    renderChatHeader(`Chat with ${session.character_name}`, !!card);
+    const listedCharacter = state.characters.find(item => item.id === session.character_hash)
+        || state.characters.find(item => item.name === session.character_name);
+    state.currentCard = card || listedCharacter;
+    if (state.currentCard) state.currentCard.character_hash = session.character_hash || listedCharacter?.id;
+    state.currentCharacter = {
+        ...(listedCharacter || {}), id: session.character_hash || listedCharacter?.id,
+        name: session.character_name, avatar_url: card?.avatar_url || listedCharacter?.avatar_url || null
+    };
+    await loadCharacterSpeechSettings(state.currentCharacter.id);
+    renderChatHeader(`Chat with ${session.character_name}`, !!state.currentCard);
     renderSessions(); renderCharacters(); setChatEnabled(true);
     navigate("chat");
     await loadMessages(session.id);
@@ -254,7 +266,9 @@ async function handleSendMessage(event) {
         if (!response.ok) throw new Error(await response.text());
         const data = await response.json();
         appendMessageToUI("assistant", data.assistant_message.content);
-        if (state.currentSessionId === sessionId && state.speechPrefs.enabled && state.speechPrefs.auto) speakCharacterReply(data.assistant_message.content);
+        if (state.currentSessionId === sessionId && state.speechPrefs.enabled && state.speechPrefs.auto) {
+            speakCharacterReply(data.assistant_message.content, currentCharacterSpeechOptions());
+        }
         await loadSessions();
     } catch (error) {
         console.error("Failed to send message:", error);
@@ -286,7 +300,7 @@ function appendMessageToUI(role, text) {
         const speakButton = document.createElement("button");
         speakButton.type = "button"; speakButton.className = "message-speak-button";
         speakButton.textContent = "▶ Speak"; speakButton.setAttribute("aria-label", "Speak this character reply");
-        speakButton.addEventListener("click", () => speakCharacterReply(text));
+        speakButton.addEventListener("click", () => speakCharacterReply(text, currentCharacterSpeechOptions()));
         bubble.append(document.createElement("br"), speakButton);
     }
     if (role === "user") wrapper.append(bubble, avatar); else wrapper.append(avatar, bubble);
@@ -389,7 +403,7 @@ function refreshVisibleSpeechButtons() {
             button = document.createElement("button"); button.type = "button"; button.className = "message-speak-button";
             button.textContent = "▶ Speak"; button.setAttribute("aria-label", "Speak this character reply");
             const text = bubble.dataset.rawText || bubble.innerText;
-            button.addEventListener("click", () => speakCharacterReply(text));
+            button.addEventListener("click", () => speakCharacterReply(text, currentCharacterSpeechOptions()));
             bubble.append(document.createElement("br"), button);
         } else if (!state.speechPrefs.enabled && button) {
             button.previousSibling?.remove(); button.remove();
@@ -454,6 +468,13 @@ function renderSpeechVoices() {
         select.disabled = true;
         $("#speech-show-more").hidden = true;
         $("#speech-voice-count").textContent = "Waiting for the browser to load its speech voices…";
+        const drawerSelect = $(".character-voice-select", $("#drawer-body-content"));
+        if (drawerSelect) renderCharacterDrawerVoiceOptions(
+            drawerSelect,
+            $(".character-voice-section input[type=search]", $("#drawer-body-content")),
+            $(".character-voice-count", $("#drawer-body-content")),
+            $(".character-voice-section button", $("#drawer-body-content"))
+        );
         return;
     }
     const displayNames = getSpeechDisplayNames();
@@ -525,6 +546,14 @@ function renderSpeechVoices() {
         option.textContent = `${selected.name}${selected.default ? " (default)" : ""} · saved selection`;
         option.selected = true; select.prepend(option);
     }
+    const drawer = $("#drawer-body-content");
+    const drawerSelect = $(".character-voice-select", drawer);
+    if (drawerSelect) renderCharacterDrawerVoiceOptions(
+        drawerSelect,
+        $(".character-voice-section input[type=search]", drawer),
+        $(".character-voice-count", drawer),
+        $(".character-voice-section button", drawer)
+    );
 }
 
 function updateSpeechRangeLabels() {
@@ -546,20 +575,22 @@ function speechText(text) {
     return outsideQuotes.replace(/\s+/g, " ").trim();
 }
 
-function speakCharacterReply(text) {
+function speakCharacterReply(text, characterSettings = null) {
     const engine = getSpeechEngine();
     const spoken = speechText(text);
     if (!engine || !spoken) return;
     const request = ++state.speechRequest;
     engine.cancel();
-    const voice = state.speechVoices.find(item => item.voiceURI === state.speechPrefs.voiceURI);
+    const requestedVoiceURI = characterSettings?.voice_uri || state.speechPrefs.voiceURI;
+    const voice = state.speechVoices.find(item => item.voiceURI === requestedVoiceURI)
+        || state.speechVoices.find(item => item.voiceURI === state.speechPrefs.voiceURI);
     // Split at word boundaries because some browser engines reject very long single utterances.
     const chunks = spoken.match(/.{1,200}(?:\s|$)/g) || [spoken];
     const speakNext = index => {
         if (request !== state.speechRequest || index >= chunks.length) return;
         const utterance = new SpeechSynthesisUtterance(chunks[index].trim());
-        utterance.rate = Number(state.speechPrefs.rate) || 1;
-        utterance.pitch = Number(state.speechPrefs.pitch);
+        utterance.rate = Number(characterSettings?.rate ?? state.speechPrefs.rate) || 1;
+        utterance.pitch = Number(characterSettings?.pitch ?? state.speechPrefs.pitch);
         if (voice) utterance.voice = voice;
         utterance.onend = () => {
             if (index + 1 < chunks.length) speakNext(index + 1);
@@ -571,6 +602,8 @@ function speakCharacterReply(text) {
     $("#speech-status").textContent = "Speaking…";
     speakNext(0);
 }
+
+function currentCharacterSpeechOptions() { return state.currentCharacterSpeechSettings; }
 
 function cancelSpeech() {
     state.speechRequest++;
@@ -1218,11 +1251,167 @@ function openCharacterDrawer() {
     $("#drawer-name").textContent = card.name || "Character details";
     const body = $("#drawer-body-content"); body.replaceChildren();
     if (card.avatar_url) { const image = document.createElement("img"); image.src = card.avatar_url; image.className = "profile-avatar"; image.alt = ""; body.append(image); }
+    const profile = getActiveProfile();
     [ ["Creator", card.creator || "Unknown"], ["Description", card.description || "No description provided."], ["Personality", card.personality || "No personality defined."], ["Scenario", card.scenario || "No scenario defined."] ].forEach(([label, value]) => {
         const section = document.createElement("section"); section.className = "profile-section";
         const heading = document.createElement("h3"); heading.textContent = label;
-        const text = document.createElement("p"); text.innerHTML = formatMessage(value); section.append(heading, text); body.append(section);
+        const text = document.createElement("p"); text.innerHTML = formatMessage(expandCharacterTokens(value, card, profile)); section.append(heading, text); body.append(section);
     });
+    appendCharacterSpeechSettings(body);
     $("#profile-drawer").classList.add("open"); $("#profile-overlay").classList.add("open");
 }
+
+function expandCharacterTokens(text, card, profile) {
+    const tokens = {
+        user: profile?.name || "User", char: card.name || "Character", character: card.name || "Character",
+        persona: profile?.description || "", description: card.description || "", personality: card.personality || "",
+        scenario: card.scenario || "", system: card.system_prompt || "", charprompt: card.system_prompt || "",
+        charinstruction: card.post_history_instructions || "", charcreatornotes: card.creator_notes || "",
+        charversion: card.character_version || "", charfirstmessage: card.first_mes || "",
+        mesexamples: card.mes_example || "", mesexamplesraw: card.mes_example || ""
+    };
+    return String(text).replace(/{{\s*([\w]+)\s*}}/g, (match, key) =>
+        Object.prototype.hasOwnProperty.call(tokens, key.toLowerCase()) ? tokens[key.toLowerCase()] : match
+    );
+}
+
+async function loadCharacterSpeechSettings(characterHash) {
+    state.currentCharacterSpeechSettings = null;
+    if (!characterHash) return;
+    try {
+        const response = await fetch(`/api/characters/${encodeURIComponent(characterHash)}/speech-settings`);
+        if (!response.ok) return;
+        const settings = await response.json();
+        if (state.currentCharacter?.id === characterHash) state.currentCharacterSpeechSettings = settings;
+    } catch (error) { console.warn("Could not load character speech settings:", error); }
+}
+
+function appendCharacterSpeechSettings(container) {
+    const hash = state.currentCharacter?.id || state.currentCard?.character_hash;
+    const section = document.createElement("section"); section.className = "profile-section character-speech-section";
+    const heading = document.createElement("h3"); heading.textContent = "Character speech";
+    const description = document.createElement("p"); description.className = "field-hint";
+    description.textContent = "Use a character-specific voice, rate, and pitch. These settings are saved separately from the card.";
+    const toggleLabel = document.createElement("label"); toggleLabel.className = "speech-toggle";
+    const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = !!state.currentCharacterSpeechSettings;
+    const toggleText = document.createElement("span");
+    const toggleTitle = document.createElement("strong"); toggleTitle.textContent = "Use custom speech settings";
+    const toggleHint = document.createElement("small"); toggleHint.textContent = "Save custom values to apply them. Unchecking restores the defaults.";
+    toggleText.append(toggleTitle, toggleHint); toggleLabel.append(toggle, toggleText);
+
+    const controls = document.createElement("div"); controls.hidden = !toggle.checked;
+    const searchLabel = document.createElement("label"); searchLabel.className = "field-label"; searchLabel.textContent = "Find a voice";
+    const search = document.createElement("input"); search.type = "search"; search.className = "text-field";
+    search.placeholder = "Search voices, regions, or providers"; search.autocomplete = "off";
+    const voiceCount = document.createElement("p"); voiceCount.className = "field-hint character-voice-count";
+    const voiceLabel = document.createElement("label"); voiceLabel.className = "field-label"; voiceLabel.textContent = "Voice";
+    const voiceSelect = document.createElement("select"); voiceSelect.className = "text-field character-voice-select"; voiceSelect.size = 5;
+    const rateLabel = document.createElement("label"); rateLabel.className = "field-label"; rateLabel.append(document.createTextNode("Rate "));
+    const rateValue = document.createElement("output"); rateValue.textContent = "1.0"; rateLabel.append(rateValue);
+    const rate = document.createElement("input"); rate.type = "range"; rate.className = "text-field"; rate.min = "0.1"; rate.max = "2"; rate.step = "0.1";
+    rate.value = String(state.currentCharacterSpeechSettings?.rate ?? state.speechPrefs.rate);
+    rateValue.textContent = Number(rate.value).toFixed(1);
+    const pitchLabel = document.createElement("label"); pitchLabel.className = "field-label"; pitchLabel.append(document.createTextNode("Pitch "));
+    const pitchValue = document.createElement("output"); pitchValue.textContent = "1.0"; pitchLabel.append(pitchValue);
+    const pitch = document.createElement("input"); pitch.type = "range"; pitch.className = "text-field"; pitch.min = "0"; pitch.max = "2"; pitch.step = "0.1";
+    pitch.value = String(state.currentCharacterSpeechSettings?.pitch ?? state.speechPrefs.pitch);
+    pitchValue.textContent = Number(pitch.value).toFixed(1);
+    const showMore = document.createElement("button"); showMore.type = "button"; showMore.className = "secondary-button"; showMore.textContent = "Show more voices";
+    const saveRow = document.createElement("div"); saveRow.className = "character-speech-actions";
+    const status = document.createElement("span"); status.className = "field-hint"; status.setAttribute("role", "status");
+    const preview = document.createElement("button"); preview.type = "button"; preview.className = "secondary-button"; preview.textContent = "Preview";
+    const save = document.createElement("button"); save.type = "button"; save.className = "primary-button"; save.textContent = "Save voice settings";
+    const reset = document.createElement("button"); reset.type = "button"; reset.className = "secondary-button"; reset.textContent = "Use defaults";
+    searchLabel.append(search);
+    voiceLabel.append(voiceSelect);
+    rateLabel.append(rate); pitchLabel.append(pitch);
+    controls.append(searchLabel, voiceCount, voiceLabel, showMore, rateLabel, pitchLabel);
+    saveRow.append(preview, save, reset); controls.append(saveRow);
+    section.append(heading, description, toggleLabel, status, controls); container.append(section);
+
+    state.characterDrawerVisibleVoiceCount = 100;
+    const refresh = () => renderCharacterDrawerVoiceOptions(voiceSelect, search, voiceCount, showMore);
+    toggle.addEventListener("change", () => {
+        controls.hidden = !toggle.checked;
+        save.disabled = !toggle.checked;
+        if (toggle.checked) status.textContent = "Save these values to apply custom speech settings.";
+        else resetCharacterSpeechSettings(hash, status, toggle, controls, save, voiceSelect, search, rate, pitch, refresh, true);
+    });
+    rate.addEventListener("input", () => { rateValue.textContent = Number(rate.value).toFixed(1); });
+    pitch.addEventListener("input", () => { pitchValue.textContent = Number(pitch.value).toFixed(1); });
+    search.addEventListener("input", () => { state.characterDrawerVisibleVoiceCount = 100; refresh(); });
+    showMore.addEventListener("click", () => { state.characterDrawerVisibleVoiceCount += 100; refresh(); });
+    preview.addEventListener("click", () => {
+        const voice = voiceSelect.value;
+        speakCharacterReply("Hello! This is a preview of this character's voice.", {
+            voice_uri: voice, rate: Number(rate.value), pitch: Number(pitch.value)
+        });
+    });
+    save.addEventListener("click", () => saveCharacterSpeechSettings(hash, {
+        voice_uri: voiceSelect.value, rate: Number(rate.value), pitch: Number(pitch.value)
+    }, status, save));
+    reset.addEventListener("click", () => resetCharacterSpeechSettings(
+        hash, status, toggle, controls, save, voiceSelect, search, rate, pitch, refresh
+    ));
+    save.disabled = !toggle.checked;
+    refresh();
+}
+
+function renderCharacterDrawerVoiceOptions(select, search, count, showMore) {
+    const query = search.value.trim().toLocaleLowerCase();
+    const savedURI = state.currentCharacterSpeechSettings?.voice_uri || "";
+    const matches = state.speechVoiceEntries.filter(entry => {
+        const voice = entry.voice;
+        return !query || `${voice.name} ${voice.lang} ${voice.voiceURI} ${entry.variant}`.toLocaleLowerCase().includes(query);
+    });
+    const shown = matches.slice(0, state.characterDrawerVisibleVoiceCount);
+    select.replaceChildren(new Option("Use global speech voice", ""));
+    shown.forEach(({ voice }) => select.add(new Option(`${voice.name} (${voice.lang || "unknown language"})`, voice.voiceURI)));
+    if (savedURI && !shown.some(entry => entry.voice.voiceURI === savedURI)) {
+        const savedVoice = state.speechVoices.find(voice => voice.voiceURI === savedURI);
+        select.add(new Option(savedVoice ? `Saved selection: ${savedVoice.name}` : "Saved voice unavailable (playback falls back)", savedURI));
+    }
+    select.value = savedURI;
+    count.textContent = state.speechVoices.length
+        ? `${matches.length} matching voices${matches.length > shown.length ? ` · showing ${shown.length}` : ""}`
+        : "Waiting for browser voices…";
+    showMore.hidden = shown.length >= matches.length;
+}
+
+async function saveCharacterSpeechSettings(hash, settings, status, button) {
+    if (!hash) { status.textContent = "This chat has no character card file identity to save settings against."; return; }
+    button.disabled = true; status.textContent = "Saving…";
+    try {
+        const response = await fetch(`/api/characters/${encodeURIComponent(hash)}/speech-settings`, {
+            method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings)
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const saved = await response.json();
+        if (state.currentCharacter?.id === hash) state.currentCharacterSpeechSettings = saved;
+        status.textContent = "Character speech settings saved.";
+    } catch (error) { status.textContent = `Could not save character speech settings: ${error.message}`; }
+    finally { button.disabled = false; }
+}
+
+async function resetCharacterSpeechSettings(hash, status, toggle, controls, save, voiceSelect, search, rate, pitch, refresh, restoreToggleOnFailure = false) {
+    if (!hash) { status.textContent = "This chat has no character card file identity to reset."; return; }
+    status.textContent = "Restoring defaults…";
+    try {
+        const response = await fetch(`/api/characters/${encodeURIComponent(hash)}/speech-settings`, { method: "DELETE" });
+        if (!response.ok) throw new Error(await response.text());
+        if (state.currentCharacter?.id === hash) state.currentCharacterSpeechSettings = null;
+        toggle.checked = false; controls.hidden = true; save.disabled = true;
+        voiceSelect.value = ""; search.value = "";
+        rate.value = String(state.speechPrefs.rate); pitch.value = String(state.speechPrefs.pitch);
+        const outputs = controls.querySelectorAll("output");
+        if (outputs[0]) outputs[0].textContent = Number(rate.value).toFixed(1);
+        if (outputs[1]) outputs[1].textContent = Number(pitch.value).toFixed(1);
+        state.characterDrawerVisibleVoiceCount = 100; refresh();
+        status.textContent = "This character now uses default speech settings.";
+    } catch (error) {
+        if (restoreToggleOnFailure) { toggle.checked = true; controls.hidden = false; save.disabled = false; }
+        status.textContent = `Could not reset character speech settings: ${error.message}`;
+    }
+}
+
 function closeCharacterDrawer() { $("#profile-drawer").classList.remove("open"); $("#profile-overlay").classList.remove("open"); }

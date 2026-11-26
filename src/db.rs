@@ -6,6 +6,7 @@ use std::path::Path;
 pub struct ChatSession {
     pub id: i64,
     pub character_name: String,
+    pub character_hash: Option<String>,
     pub character_card_json: Option<String>,
     pub title: String,
     pub created_at: String,
@@ -26,6 +27,13 @@ pub struct UserProfile {
     pub name: String,
     pub description: String,
     pub instructions: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct CharacterSpeechSettings {
+    pub voice_uri: String,
+    pub rate: f64,
+    pub pitch: f64,
 }
 
 pub struct Database {
@@ -64,11 +72,22 @@ impl Database {
             [],
         )?;
 
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS character_speech_settings (
+                character_hash TEXT PRIMARY KEY NOT NULL,
+                voice_uri TEXT NOT NULL DEFAULT '',
+                rate REAL NOT NULL DEFAULT 1.0,
+                pitch REAL NOT NULL DEFAULT 1.0
+            )",
+            [],
+        )?;
+
         // Ensure legacy DBs get the column added if initialized prior to this change
         let _ = conn.execute(
             "ALTER TABLE sessions ADD COLUMN character_card_json TEXT",
             [],
         );
+        let _ = conn.execute("ALTER TABLE sessions ADD COLUMN character_hash TEXT", []);
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS messages (
@@ -88,27 +107,29 @@ impl Database {
     pub fn create_session(
         &mut self,
         character_name: &str,
+        character_hash: Option<&str>,
         character_card_json: Option<&str>,
         title: &str,
     ) -> Result<i64> {
         self.conn.execute(
-            "INSERT INTO sessions (character_name, character_card_json, title) VALUES (?1, ?2, ?3)",
-            params![character_name, character_card_json, title],
+            "INSERT INTO sessions (character_name, character_hash, character_card_json, title) VALUES (?1, ?2, ?3, ?4)",
+            params![character_name, character_hash, character_card_json, title],
         )?;
         Ok(self.conn.last_insert_rowid())
     }
 
     pub fn get_sessions(&self) -> Result<Vec<ChatSession>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, character_name, character_card_json, title, created_at FROM sessions ORDER BY id DESC"
+            "SELECT id, character_name, character_hash, character_card_json, title, created_at FROM sessions ORDER BY id DESC"
         )?;
         let session_iter = stmt.query_map([], |row| {
             Ok(ChatSession {
                 id: row.get(0)?,
                 character_name: row.get(1)?,
-                character_card_json: row.get(2)?,
-                title: row.get(3)?,
-                created_at: row.get(4)?,
+                character_hash: row.get(2)?,
+                character_card_json: row.get(3)?,
+                title: row.get(4)?,
+                created_at: row.get(5)?,
             })
         })?;
 
@@ -210,6 +231,40 @@ impl Database {
         )?;
         Ok(())
     }
+
+    pub fn get_character_speech_settings(
+        &self,
+        character_hash: &str,
+    ) -> Result<Option<CharacterSpeechSettings>> {
+        self.conn
+            .query_row(
+                "SELECT voice_uri, rate, pitch FROM character_speech_settings WHERE character_hash = ?1",
+                params![character_hash],
+                |row| Ok(CharacterSpeechSettings { voice_uri: row.get(0)?, rate: row.get(1)?, pitch: row.get(2)? }),
+            )
+            .optional()
+    }
+
+    pub fn save_character_speech_settings(
+        &self,
+        character_hash: &str,
+        settings: &CharacterSpeechSettings,
+    ) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO character_speech_settings (character_hash, voice_uri, rate, pitch) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(character_hash) DO UPDATE SET voice_uri = excluded.voice_uri, rate = excluded.rate, pitch = excluded.pitch",
+            params![character_hash, settings.voice_uri, settings.rate, settings.pitch],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_character_speech_settings(&self, character_hash: &str) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM character_speech_settings WHERE character_hash = ?1",
+            params![character_hash],
+        )?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -223,6 +278,7 @@ mod tests {
         let session_id = db
             .create_session(
                 "Test Character",
+                None,
                 Some(r#"{"name":"Test Character"}"#),
                 "First Chat Session",
             )

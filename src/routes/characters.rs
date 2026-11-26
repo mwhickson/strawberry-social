@@ -10,11 +10,19 @@ use std::path::Path;
 use std::sync::Arc;
 
 pub fn router() -> Router<Arc<crate::AppState>> {
-    Router::new().route("/", get(list_characters).post(upload_character))
+    Router::new()
+        .route("/", get(list_characters).post(upload_character))
+        .route(
+            "/:hash/speech-settings",
+            get(get_speech_settings)
+                .put(save_speech_settings)
+                .delete(reset_speech_settings),
+        )
 }
 
 #[derive(serde::Serialize)]
 pub struct CharacterSummary {
+    id: String,
     filename: String,
     name: String,
     description: String,
@@ -42,6 +50,9 @@ async fn list_characters(State(state): State<Arc<crate::AppState>>) -> Json<Vec<
                     if ext == "json" || ext == "png" {
                         match CharacterCard::from_file(&path) {
                             Ok(card) => {
+                                let id = fs::read(&path)
+                                    .map(|bytes| crate::card::content_hash(&bytes))
+                                    .unwrap_or_default();
                                 let avatar_url = if ext == "png" {
                                     match fs::read(&path) {
                                         Ok(bytes) => Some(format!(
@@ -66,6 +77,7 @@ async fn list_characters(State(state): State<Arc<crate::AppState>>) -> Json<Vec<
                                 };
 
                                 summaries.push(CharacterSummary {
+                                    id,
                                     filename: path
                                         .file_name()
                                         .unwrap()
@@ -113,6 +125,7 @@ async fn upload_character(
                 format!("Invalid character card: {}", e),
             )
         })?;
+        let character_hash = crate::card::content_hash(&data);
 
         let avatar_url = if filename.to_lowercase().ends_with(".png") {
             Some(format!(
@@ -124,6 +137,7 @@ async fn upload_character(
         };
 
         return Ok(Json(CharacterSummary {
+            id: character_hash,
             filename,
             name: card.data.name,
             description: card.data.description,
@@ -136,6 +150,77 @@ async fn upload_character(
         axum::http::StatusCode::BAD_REQUEST,
         "No file uploaded".into(),
     ))
+}
+
+#[derive(serde::Deserialize)]
+struct SpeechSettingsPayload {
+    voice_uri: String,
+    rate: f64,
+    pitch: f64,
+}
+
+async fn get_speech_settings(
+    State(state): State<Arc<crate::AppState>>,
+    axum::extract::Path(hash): axum::extract::Path<String>,
+) -> Result<Json<Option<crate::db::CharacterSpeechSettings>>, StatusCodeResponse> {
+    validate_character_hash(&hash)?;
+    let db = crate::db::Database::init(state.data_dir.join("sessions/chats.db"))
+        .map_err(internal_error)?;
+    Ok(Json(
+        db.get_character_speech_settings(&hash)
+            .map_err(internal_error)?,
+    ))
+}
+
+async fn save_speech_settings(
+    State(state): State<Arc<crate::AppState>>,
+    axum::extract::Path(hash): axum::extract::Path<String>,
+    Json(payload): Json<SpeechSettingsPayload>,
+) -> Result<Json<crate::db::CharacterSpeechSettings>, StatusCodeResponse> {
+    validate_character_hash(&hash)?;
+    if payload.voice_uri.len() > 2048
+        || !payload.rate.is_finite()
+        || !(0.1..=2.0).contains(&payload.rate)
+        || !payload.pitch.is_finite()
+        || !(0.0..=2.0).contains(&payload.pitch)
+    {
+        return Err(StatusCodeResponse(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Choose a voice URI up to 2048 characters, a rate from 0.1 to 2, and a pitch from 0 to 2.".into(),
+        ));
+    }
+    let settings = crate::db::CharacterSpeechSettings {
+        voice_uri: payload.voice_uri,
+        rate: payload.rate,
+        pitch: payload.pitch,
+    };
+    let db = crate::db::Database::init(state.data_dir.join("sessions/chats.db"))
+        .map_err(internal_error)?;
+    db.save_character_speech_settings(&hash, &settings)
+        .map_err(internal_error)?;
+    Ok(Json(settings))
+}
+
+async fn reset_speech_settings(
+    State(state): State<Arc<crate::AppState>>,
+    axum::extract::Path(hash): axum::extract::Path<String>,
+) -> Result<axum::http::StatusCode, StatusCodeResponse> {
+    validate_character_hash(&hash)?;
+    let db = crate::db::Database::init(state.data_dir.join("sessions/chats.db"))
+        .map_err(internal_error)?;
+    db.delete_character_speech_settings(&hash)
+        .map_err(internal_error)?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+fn validate_character_hash(hash: &str) -> Result<(), StatusCodeResponse> {
+    if hash.len() != 64 || !hash.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(StatusCodeResponse(
+            axum::http::StatusCode::BAD_REQUEST,
+            "Invalid character card hash".into(),
+        ));
+    }
+    Ok(())
 }
 
 struct StatusCodeResponse(axum::http::StatusCode, String);

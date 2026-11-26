@@ -1,5 +1,6 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -65,6 +66,10 @@ pub struct BookEntry {
     pub insertion_order: i32,
     #[serde(default)]
     pub constant: bool,
+}
+
+pub fn content_hash(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
 }
 
 impl CharacterCard {
