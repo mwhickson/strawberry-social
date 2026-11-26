@@ -1,13 +1,16 @@
 const PROFILE_STORAGE_KEY = "strawberry-social-profiles-v1";
 const ACTIVE_PROFILE_KEY = "strawberry-social-active-profile-v1";
 const THEME_KEY = "strawberry-social-theme-v1"; // Used only once to migrate the previous browser preference.
+const SPEECH_PREFS_KEY = "strawberry-social-speech-v1";
+const DEFAULT_SPEECH_PREFS = { enabled: false, auto: false, voiceURI: "", rate: 1, pitch: 1 };
 
 const state = {
     config: {}, characters: [], sessions: [], profiles: [], activeProfileId: null,
     currentSessionId: null, currentCharacter: null, currentCard: null, editingProfileId: null,
     runtimeInfoLoaded: false, runtimeInfoLoading: false,
     serverStatus: null, installedModels: [], selectedModelFiles: null, downloadId: null,
-    modelBrowserLoaded: false, modelBrowserLoading: false, lastDownloadStatus: "idle", dismissedDownloadId: null
+    modelBrowserLoaded: false, modelBrowserLoading: false, lastDownloadStatus: "idle", dismissedDownloadId: null,
+    speechPrefs: { ...DEFAULT_SPEECH_PREFS }, speechVoices: [], speechRequest: 0
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -21,6 +24,7 @@ async function initializeApp() {
     bindUploads();
     bindProfiles();
     bindSettings();
+    bindSpeech();
     bindModelControls();
     bindApplicationControls();
     bindCharacterDrawer();
@@ -145,6 +149,7 @@ function renderCharacters() {
 
 async function createSession(character) {
     try {
+        cancelSpeech();
         const response = await fetch("/api/chat/sessions", {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ character_name: character.name, title: `Chat with ${character.name}` })
@@ -193,6 +198,7 @@ function renderSessions() {
 }
 
 async function switchSession(session) {
+    cancelSpeech();
     state.currentSessionId = session.id;
     const card = parseCard(session.character_card_json);
     state.currentCard = card;
@@ -235,16 +241,19 @@ function bindChat() { $("#chat-form").addEventListener("submit", handleSendMessa
 async function handleSendMessage(event) {
     event.preventDefault();
     if (!state.currentSessionId) return;
+    const sessionId = state.currentSessionId;
     const input = $("#message-input"); const content = input.value.trim();
     if (!content) return;
     input.value = ""; setChatLocked(true); appendMessageToUI("user", content);
     try {
-        const response = await fetch(`/api/chat/sessions/${state.currentSessionId}/messages`, {
+        const response = await fetch(`/api/chat/sessions/${sessionId}/messages`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content, user_profile: getActiveProfile() })
         });
         if (!response.ok) throw new Error(await response.text());
-        const data = await response.json(); appendMessageToUI("assistant", data.assistant_message.content);
+        const data = await response.json();
+        appendMessageToUI("assistant", data.assistant_message.content);
+        if (state.currentSessionId === sessionId && state.speechPrefs.enabled && state.speechPrefs.auto) speakCharacterReply(data.assistant_message.content);
         await loadSessions();
     } catch (error) {
         console.error("Failed to send message:", error);
@@ -270,9 +279,158 @@ function appendMessageToUI(role, text) {
         avatar.append(fallback);
     }
     const bubble = document.createElement("div"); bubble.className = `message ${role}`;
+    if (role === "assistant") bubble.dataset.rawText = text;
     bubble.innerHTML = role === "assistant" ? formatMessage(text) : escapeHtml(text).replace(/\n/g, "<br>");
+    if (role === "assistant" && state.speechPrefs.enabled) {
+        const speakButton = document.createElement("button");
+        speakButton.type = "button"; speakButton.className = "message-speak-button";
+        speakButton.textContent = "▶ Speak"; speakButton.setAttribute("aria-label", "Speak this character reply");
+        speakButton.addEventListener("click", () => speakCharacterReply(text));
+        bubble.append(document.createElement("br"), speakButton);
+    }
     if (role === "user") wrapper.append(bubble, avatar); else wrapper.append(avatar, bubble);
     container.append(wrapper); container.scrollTop = container.scrollHeight;
+}
+
+function getSpeechEngine() { return "speechSynthesis" in window ? window.speechSynthesis : null; }
+
+function bindSpeech() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(SPEECH_PREFS_KEY) || "null");
+        if (saved && typeof saved === "object") state.speechPrefs = {
+            ...DEFAULT_SPEECH_PREFS, ...saved, auto: !!saved.auto, enabled: !!saved.enabled,
+            rate: Number.isFinite(Number(saved.rate)) ? Math.max(0.1, Math.min(2, Number(saved.rate))) : 1,
+            pitch: Number.isFinite(Number(saved.pitch)) ? Math.max(0, Math.min(2, Number(saved.pitch))) : 1
+        };
+    } catch { /* Ignore invalid browser-local preferences. */ }
+    const prefs = state.speechPrefs;
+    $("#speech-enabled").checked = prefs.enabled;
+    $("#speech-auto").checked = prefs.auto;
+    $("#speech-rate").value = String(prefs.rate);
+    $("#speech-pitch").value = String(prefs.pitch);
+    updateSpeechRangeLabels();
+    $("#speech-enabled").addEventListener("change", event => updateSpeechPreference("enabled", event.target.checked));
+    $("#speech-auto").addEventListener("change", event => updateSpeechPreference("auto", event.target.checked));
+    $("#speech-voice-search").addEventListener("input", renderSpeechVoices);
+    $("#speech-voice").addEventListener("change", event => updateSpeechPreference("voiceURI", event.target.value));
+    $("#speech-rate").addEventListener("input", event => { updateSpeechPreference("rate", Number(event.target.value)); updateSpeechRangeLabels(); });
+    $("#speech-pitch").addEventListener("input", event => { updateSpeechPreference("pitch", Number(event.target.value)); updateSpeechRangeLabels(); });
+    $("#speech-preview").addEventListener("click", () => speakCharacterReply("Hello! This is a preview of the selected voice."));
+    const engine = getSpeechEngine();
+    if (!engine) {
+        $("#speech-voice-count").textContent = "Speech synthesis is not available in this browser.";
+        $("#speech-enabled").disabled = $("#speech-auto").disabled = $("#speech-preview").disabled = true;
+        return;
+    }
+    const refreshVoices = () => {
+        state.speechVoices = engine.getVoices();
+        renderSpeechVoices();
+    };
+    engine.addEventListener("voiceschanged", refreshVoices);
+    refreshVoices();
+}
+
+function updateSpeechPreference(key, value) {
+    state.speechPrefs[key] = value;
+    try { localStorage.setItem(SPEECH_PREFS_KEY, JSON.stringify(state.speechPrefs)); }
+    catch (error) { console.warn("Could not save speech settings:", error); }
+    if (key === "enabled") {
+        refreshVisibleSpeechButtons();
+        if (!value) cancelSpeech();
+    }
+}
+
+function refreshVisibleSpeechButtons() {
+    $$(".message-wrapper.assistant").forEach(wrapper => {
+        const bubble = $(".message", wrapper);
+        let button = $(".message-speak-button", bubble);
+        if (state.speechPrefs.enabled && !button) {
+            button = document.createElement("button"); button.type = "button"; button.className = "message-speak-button";
+            button.textContent = "▶ Speak"; button.setAttribute("aria-label", "Speak this character reply");
+            const text = bubble.dataset.rawText || bubble.innerText;
+            button.addEventListener("click", () => speakCharacterReply(text));
+            bubble.append(document.createElement("br"), button);
+        } else if (!state.speechPrefs.enabled && button) {
+            button.previousSibling?.remove(); button.remove();
+        }
+    });
+}
+
+function renderSpeechVoices() {
+    const select = $("#speech-voice"), query = $("#speech-voice-search").value.trim().toLocaleLowerCase();
+    const voices = [...state.speechVoices].sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
+    const filtered = query ? voices.filter(voice => `${voice.name} ${voice.lang} ${voice.voiceURI}`.toLocaleLowerCase().includes(query)) : voices;
+    const limit = query ? 300 : 100;
+    const shown = filtered.slice(0, limit);
+    select.replaceChildren();
+    if (!shown.length) {
+        const option = document.createElement("option"); option.value = ""; option.textContent = voices.length ? "No matching voices" : "No voices available"; select.append(option);
+    } else {
+        const groups = new Map();
+        for (const voice of shown) {
+            const groupName = voice.lang || "Other languages";
+            if (!groups.has(groupName)) { const group = document.createElement("optgroup"); group.label = groupName; groups.set(groupName, group); select.append(group); }
+            const option = document.createElement("option"); option.value = voice.voiceURI;
+            option.textContent = `${voice.name}${voice.default ? " (default)" : ""}`;
+            option.title = `${voice.name} · ${voice.lang} · ${voice.voiceURI}`;
+            groups.get(groupName).append(option);
+        }
+    }
+    const selected = voices.find(voice => voice.voiceURI === state.speechPrefs.voiceURI);
+    if (selected && shown.some(voice => voice.voiceURI === selected.voiceURI)) select.value = selected.voiceURI;
+    else if (!state.speechPrefs.voiceURI && shown.length) select.value = shown.find(voice => voice.default)?.voiceURI || shown[0].voiceURI;
+    const extra = filtered.length > shown.length ? ` Showing ${shown.length} of ${filtered.length}; refine your search.` : "";
+    $("#speech-voice-count").textContent = `${voices.length} voices available${query ? ` · ${filtered.length} match search` : ""}.${extra}`;
+    select.disabled = !shown.length;
+    if (selected && !shown.some(voice => voice.voiceURI === selected.voiceURI)) {
+        const option = document.createElement("option"); option.value = selected.voiceURI;
+        option.textContent = `${selected.name}${selected.default ? " (default)" : ""} · saved selection`;
+        option.selected = true; select.prepend(option);
+    }
+}
+
+function updateSpeechRangeLabels() {
+    $("#speech-rate-value").value = Number($("#speech-rate").value).toFixed(1);
+    $("#speech-pitch-value").value = Number($("#speech-pitch").value).toFixed(1);
+}
+
+function speechText(text) {
+    // The chat renderer treats *...* as actions; common bracketed and explicitly marked thoughts are omitted too.
+    return String(text).replace(/<thought\b[^>]*>[\s\S]*?<\/thought>/gi, " ")
+        .replace(/\*[^*]*\*/g, " ").replace(/\[\[[\s\S]*?\]\]/g, " ").replace(/\[[^\]]*\]/g, " ")
+        .replace(/\s+/g, " ").trim();
+}
+
+function speakCharacterReply(text) {
+    const engine = getSpeechEngine();
+    const spoken = speechText(text);
+    if (!engine || !spoken) return;
+    const request = ++state.speechRequest;
+    engine.cancel();
+    const voice = state.speechVoices.find(item => item.voiceURI === state.speechPrefs.voiceURI);
+    // Split at word boundaries because some browser engines reject very long single utterances.
+    const chunks = spoken.match(/.{1,200}(?:\s|$)/g) || [spoken];
+    const speakNext = index => {
+        if (request !== state.speechRequest || index >= chunks.length) return;
+        const utterance = new SpeechSynthesisUtterance(chunks[index].trim());
+        utterance.rate = Number(state.speechPrefs.rate) || 1;
+        utterance.pitch = Number(state.speechPrefs.pitch);
+        if (voice) utterance.voice = voice;
+        utterance.onend = () => {
+            if (index + 1 < chunks.length) speakNext(index + 1);
+            else if (request === state.speechRequest) $("#speech-status").textContent = "Speech finished.";
+        };
+        utterance.onerror = event => { if (request === state.speechRequest) $("#speech-status").textContent = `Speech could not be played: ${event.error || "browser error"}.`; };
+        engine.speak(utterance);
+    };
+    $("#speech-status").textContent = "Speaking…";
+    speakNext(0);
+}
+
+function cancelSpeech() {
+    state.speechRequest++;
+    getSpeechEngine()?.cancel();
+    $("#speech-status").textContent = "";
 }
 
 function formatMessage(text) {
@@ -293,6 +451,7 @@ async function deleteSession(id) {
         const response = await fetch(`/api/chat/sessions/${id}`, { method: "DELETE" });
         if (!response.ok) throw new Error(await response.text());
         if (state.currentSessionId === id) {
+            cancelSpeech();
             state.currentSessionId = null; state.currentCharacter = null; state.currentCard = null;
             renderChatHeader("Choose a character to begin", false); setChatEnabled(false);
             $("#chat-messages").replaceChildren(emptyState("A little conversation?", "Choose a character from the sidebar to start a chat."));

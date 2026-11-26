@@ -52,6 +52,22 @@
                         <label class="field-label" for="theme-select">Theme</label>
                         <select class="text-field" id="theme-select"><option value="dark">Dark</option><option value="light">Light</option></select>
                     </section>
+                    <section class="panel settings-panel speech-settings-panel">
+                        <div><span class="eyebrow">CHARACTER SPEECH</span><h2>Text to speech</h2><p>Use voices available in this browser to read character replies aloud.</p></div>
+                        <label class="speech-toggle"><input id="speech-enabled" type="checkbox"><span><strong>Enable character speech</strong><small>Show a speak button on character replies.</small></span></label>
+                        <label class="speech-toggle"><input id="speech-auto" type="checkbox"><span><strong>Speak replies automatically</strong><small>When off, use the speak button on a reply. Automatic speech is off by default.</small></span></label>
+                        <label class="field-label" for="speech-voice-search">Find a voice</label>
+                        <input class="text-field" id="speech-voice-search" type="search" placeholder="Search name or language (e.g. English, en-US)" autocomplete="off">
+                        <p id="speech-voice-count" class="field-hint" aria-live="polite">Loading browser voices…</p>
+                        <label class="field-label" for="speech-voice">Voice</label>
+                        <select class="text-field" id="speech-voice" size="7" aria-describedby="speech-voice-count"></select>
+                        <div class="generation-field-grid speech-range-grid">
+                            <div><label class="field-label" for="speech-rate">Rate <output id="speech-rate-value">1.0</output></label><input class="text-field" id="speech-rate" type="range" min="0.1" max="2" step="0.1" value="1"></div>
+                            <div><label class="field-label" for="speech-pitch">Pitch <output id="speech-pitch-value">1.0</output></label><input class="text-field" id="speech-pitch" type="range" min="0" max="2" step="0.1" value="1"></div>
+                        </div>
+                        <p id="speech-status" class="field-hint" role="status" aria-live="polite"></p>
+                        <button id="speech-preview" class="secondary-button" type="button">Preview voice</button>
+                    </section>
                     <form id="generation-settings-form" class="panel settings-panel generation-settings-panel">
                         <div><span class="eyebrow">CHAT GENERATION</span><h2>Response settings</h2><p>Choose how much context the model can use and how varied its replies should be.</p></div>
                         <label class="field-label" for="context-window">Context window (tokens)</label>
