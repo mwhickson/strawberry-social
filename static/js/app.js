@@ -2,7 +2,7 @@ const PROFILE_STORAGE_KEY = "strawberry-social-profiles-v1";
 const ACTIVE_PROFILE_KEY = "strawberry-social-active-profile-v1";
 const THEME_KEY = "strawberry-social-theme-v1"; // Used only once to migrate the previous browser preference.
 const SPEECH_PREFS_KEY = "strawberry-social-speech-v1";
-const DEFAULT_SPEECH_PREFS = { enabled: false, auto: false, voiceURI: "", rate: 1, pitch: 1 };
+const DEFAULT_SPEECH_PREFS = { enabled: false, auto: false, voiceURI: "", language: "", variant: "", rate: 1, pitch: 1 };
 
 const state = {
     config: {}, characters: [], sessions: [], profiles: [], activeProfileId: null,
@@ -10,7 +10,8 @@ const state = {
     runtimeInfoLoaded: false, runtimeInfoLoading: false,
     serverStatus: null, installedModels: [], selectedModelFiles: null, downloadId: null,
     modelBrowserLoaded: false, modelBrowserLoading: false, lastDownloadStatus: "idle", dismissedDownloadId: null,
-    speechPrefs: { ...DEFAULT_SPEECH_PREFS }, speechVoices: [], speechRequest: 0
+    speechPrefs: { ...DEFAULT_SPEECH_PREFS }, speechVoices: [], speechVoiceEntries: [], speechRequest: 0, speechVoiceRetryCount: 0,
+    speechVisibleVoiceCount: 100
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -311,7 +312,18 @@ function bindSpeech() {
     updateSpeechRangeLabels();
     $("#speech-enabled").addEventListener("change", event => updateSpeechPreference("enabled", event.target.checked));
     $("#speech-auto").addEventListener("change", event => updateSpeechPreference("auto", event.target.checked));
-    $("#speech-voice-search").addEventListener("input", renderSpeechVoices);
+    $("#speech-voice-search").addEventListener("input", resetSpeechVoiceList);
+    $("#speech-language").addEventListener("change", event => updateSpeechPreference("language", event.target.value));
+    $("#speech-variant").addEventListener("change", event => updateSpeechPreference("variant", event.target.value));
+    $("#speech-show-more").addEventListener("click", () => {
+        state.speechVisibleVoiceCount += 100;
+        renderSpeechVoices();
+    });
+    $("#speech-refresh-voices").addEventListener("click", () => {
+        state.speechVoiceRetryCount = 0;
+        $("#speech-refresh-voices").hidden = true;
+        refreshVoices();
+    });
     $("#speech-voice").addEventListener("change", event => updateSpeechPreference("voiceURI", event.target.value));
     $("#speech-rate").addEventListener("input", event => { updateSpeechPreference("rate", Number(event.target.value)); updateSpeechRangeLabels(); });
     $("#speech-pitch").addEventListener("input", event => { updateSpeechPreference("pitch", Number(event.target.value)); updateSpeechRangeLabels(); });
@@ -320,20 +332,49 @@ function bindSpeech() {
     if (!engine) {
         $("#speech-voice-count").textContent = "Speech synthesis is not available in this browser.";
         $("#speech-enabled").disabled = $("#speech-auto").disabled = $("#speech-preview").disabled = true;
+        $("#speech-refresh-voices").hidden = true;
         return;
     }
     const refreshVoices = () => {
-        state.speechVoices = engine.getVoices();
+        const voices = engine.getVoices();
+        if (voices.length) {
+            state.speechVoices = voices;
+            state.speechVoiceEntries = voices.map(voice => ({
+                voice,
+                family: speechVoiceFamily(voice),
+                variant: speechVoiceVariant(voice)
+            })).sort((a, b) => (a.voice.lang || "").localeCompare(b.voice.lang || "") || a.voice.name.localeCompare(b.voice.name));
+            state.speechVoiceRetryCount = 0;
+            $("#speech-refresh-voices").hidden = true;
+            renderSpeechVoices();
+            return;
+        }
         renderSpeechVoices();
+        if (state.speechVoiceRetryCount < 40) {
+            state.speechVoiceRetryCount++;
+            window.setTimeout(refreshVoices, 250);
+        } else {
+            $("#speech-voice-count").textContent = "This browser has not provided any speech voices. Check that a system voice is installed, then reload the page.";
+            $("#speech-refresh-voices").hidden = false;
+        }
     };
-    engine.addEventListener("voiceschanged", refreshVoices);
+    engine.addEventListener("voiceschanged", () => {
+        state.speechVoiceRetryCount = 0;
+        refreshVoices();
+    });
     refreshVoices();
 }
 
 function updateSpeechPreference(key, value) {
     state.speechPrefs[key] = value;
+    if (key === "language") {
+        state.speechPrefs.variant = "";
+        state.speechVisibleVoiceCount = 100;
+    }
+    if (key === "variant") state.speechVisibleVoiceCount = 100;
     try { localStorage.setItem(SPEECH_PREFS_KEY, JSON.stringify(state.speechPrefs)); }
     catch (error) { console.warn("Could not save speech settings:", error); }
+    if (key === "language" || key === "variant") renderSpeechVoices();
     if (key === "enabled") {
         refreshVisibleSpeechButtons();
         if (!value) cancelSpeech();
@@ -356,19 +397,112 @@ function refreshVisibleSpeechButtons() {
     });
 }
 
+function resetSpeechVoiceList() {
+    state.speechVisibleVoiceCount = 100;
+    renderSpeechVoices();
+}
+
+function speechVoiceFamily(voice) {
+    const languageTag = String(voice.lang || "").trim().replace(/_/g, "-");
+    if (!languageTag) return "und";
+    try { return new Intl.Locale(languageTag).language.toLowerCase(); }
+    catch { return languageTag.split("-")[0].toLowerCase() || "und"; }
+}
+
+let cachedSpeechDisplayNames;
+function getSpeechDisplayNames() {
+    if (cachedSpeechDisplayNames !== undefined) return cachedSpeechDisplayNames;
+    try { cachedSpeechDisplayNames = new Intl.DisplayNames([navigator.language || "en"], { type: "language" }); }
+    catch { cachedSpeechDisplayNames = null; }
+    return cachedSpeechDisplayNames;
+}
+
+let cachedSpeechRegionNames;
+function getSpeechRegionNames() {
+    if (cachedSpeechRegionNames !== undefined) return cachedSpeechRegionNames;
+    try { cachedSpeechRegionNames = new Intl.DisplayNames([navigator.language || "en"], { type: "region" }); }
+    catch { cachedSpeechRegionNames = null; }
+    return cachedSpeechRegionNames;
+}
+
+function speechVoiceVariant(voice) {
+    const explicitVariant = String(voice.name || "").match(/\(([^()]{2,})\)/);
+    if (explicitVariant) return explicitVariant[1].trim();
+    const languageTag = String(voice.lang || "").trim().replace(/_/g, "-");
+    try {
+        const region = new Intl.Locale(languageTag).region;
+        if (region) {
+            try { return getSpeechRegionNames()?.of(region) || region; } catch { return region; }
+        }
+    } catch { /* Some engines return a nonstandard language string. */ }
+    return "";
+}
+
 function renderSpeechVoices() {
     const select = $("#speech-voice"), query = $("#speech-voice-search").value.trim().toLocaleLowerCase();
-    const voices = [...state.speechVoices].sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
-    const filtered = query ? voices.filter(voice => `${voice.name} ${voice.lang} ${voice.voiceURI}`.toLocaleLowerCase().includes(query)) : voices;
-    const limit = query ? 300 : 100;
-    const shown = filtered.slice(0, limit);
+    const entries = state.speechVoiceEntries;
+    const voices = state.speechVoices;
+    const languageSelect = $("#speech-language");
+    const variantSelect = $("#speech-variant"), variantLabel = $("#speech-variant-label");
+    const oldLanguage = state.speechPrefs.language || languageSelect.value;
+    const familyCodes = [...new Set(entries.map(entry => entry.family))].sort();
+    if (!voices.length) {
+        languageSelect.replaceChildren(new Option("All languages", ""));
+        variantSelect.replaceChildren(new Option("All variants", ""));
+        variantSelect.hidden = variantLabel.hidden = true;
+        select.replaceChildren(new Option("Waiting for browser voices…", ""));
+        select.disabled = true;
+        $("#speech-show-more").hidden = true;
+        $("#speech-voice-count").textContent = "Waiting for the browser to load its speech voices…";
+        return;
+    }
+    const displayNames = getSpeechDisplayNames();
+    const familyNames = new Map(familyCodes.map(code => {
+        let name = code;
+        try { name = displayNames?.of(code) || code; } catch { /* A malformed browser language tag should not hide other voices. */ }
+        return [code, name];
+    }));
+    languageSelect.replaceChildren(new Option("All languages", ""));
+    familyCodes.forEach(code => languageSelect.add(new Option(`${familyNames.get(code)} (${code})`, code)));
+    const chosenFamily = familyCodes.includes(oldLanguage) ? oldLanguage : "";
+    languageSelect.value = chosenFamily;
+    if (state.speechPrefs.language !== chosenFamily) {
+        state.speechPrefs.language = chosenFamily;
+        try { localStorage.setItem(SPEECH_PREFS_KEY, JSON.stringify(state.speechPrefs)); } catch { /* Ignore storage errors. */ }
+    }
+    const matchingFamily = familyCodes.find(code => code === query || familyNames.get(code).toLocaleLowerCase() === query);
+    const queryFamily = chosenFamily ? "" : matchingFamily;
+    const familyFiltered = entries.filter(entry => {
+        return (!chosenFamily || entry.family === chosenFamily) && (!queryFamily || entry.family === queryFamily);
+    });
+    const hasFamilyContext = !!(chosenFamily || queryFamily);
+    const variantNames = hasFamilyContext
+        ? [...new Set(familyFiltered.map(entry => entry.variant).filter(Boolean))].sort((a, b) => a.localeCompare(b))
+        : [];
+    variantSelect.replaceChildren(new Option("All variants", ""));
+    variantNames.forEach(variant => variantSelect.add(new Option(variant, variant)));
+    const selectedVariant = variantNames.includes(state.speechPrefs.variant) ? state.speechPrefs.variant : "";
+    variantSelect.value = selectedVariant;
+    variantSelect.hidden = variantLabel.hidden = !hasFamilyContext || variantNames.length < 2;
+    if (state.speechPrefs.variant !== selectedVariant) {
+        state.speechPrefs.variant = selectedVariant;
+        try { localStorage.setItem(SPEECH_PREFS_KEY, JSON.stringify(state.speechPrefs)); } catch { /* Ignore storage errors. */ }
+    }
+    const variantFiltered = familyFiltered.filter(entry => !selectedVariant || entry.variant === selectedVariant);
+    const filtered = variantFiltered.filter(entry => {
+        if (queryFamily) return true;
+        const voice = entry.voice;
+        return !query || `${voice.name} ${voice.lang} ${voice.voiceURI} ${entry.variant}`.toLocaleLowerCase().includes(query);
+    });
+    const shown = filtered.slice(0, state.speechVisibleVoiceCount);
     select.replaceChildren();
     if (!shown.length) {
         const option = document.createElement("option"); option.value = ""; option.textContent = voices.length ? "No matching voices" : "No voices available"; select.append(option);
     } else {
         const groups = new Map();
-        for (const voice of shown) {
-            const groupName = voice.lang || "Other languages";
+        for (const entry of shown) {
+            const voice = entry.voice;
+            const groupName = voice.lang || "Unknown language";
             if (!groups.has(groupName)) { const group = document.createElement("optgroup"); group.label = groupName; groups.set(groupName, group); select.append(group); }
             const option = document.createElement("option"); option.value = voice.voiceURI;
             option.textContent = `${voice.name}${voice.default ? " (default)" : ""}`;
@@ -376,13 +510,17 @@ function renderSpeechVoices() {
             groups.get(groupName).append(option);
         }
     }
-    const selected = voices.find(voice => voice.voiceURI === state.speechPrefs.voiceURI);
-    if (selected && shown.some(voice => voice.voiceURI === selected.voiceURI)) select.value = selected.voiceURI;
-    else if (!state.speechPrefs.voiceURI && shown.length) select.value = shown.find(voice => voice.default)?.voiceURI || shown[0].voiceURI;
-    const extra = filtered.length > shown.length ? ` Showing ${shown.length} of ${filtered.length}; refine your search.` : "";
-    $("#speech-voice-count").textContent = `${voices.length} voices available${query ? ` · ${filtered.length} match search` : ""}.${extra}`;
+    const selected = entries.find(entry => entry.voice.voiceURI === state.speechPrefs.voiceURI)?.voice;
+    if (selected && shown.some(entry => entry.voice.voiceURI === selected.voiceURI)) select.value = selected.voiceURI;
+    else if (!state.speechPrefs.voiceURI && shown.length) select.value = shown.find(entry => entry.voice.default)?.voice.voiceURI || shown[0].voice.voiceURI;
+    const extra = filtered.length > shown.length ? ` Showing ${shown.length} of ${filtered.length}.` : "";
+    const scope = chosenFamily || queryFamily ? ` · ${familyNames.get(chosenFamily || queryFamily)} voices` : "";
+    $("#speech-voice-count").textContent = `${voices.length} voices available${scope}${query ? ` · ${filtered.length} match search` : ""}.${extra}`;
     select.disabled = !shown.length;
-    if (selected && !shown.some(voice => voice.voiceURI === selected.voiceURI)) {
+    const showMore = $("#speech-show-more");
+    showMore.hidden = shown.length >= filtered.length;
+    showMore.textContent = `Show more voices (${Math.min(100, filtered.length - shown.length)} more)`;
+    if (selected && !shown.some(entry => entry.voice.voiceURI === selected.voiceURI)) {
         const option = document.createElement("option"); option.value = selected.voiceURI;
         option.textContent = `${selected.name}${selected.default ? " (default)" : ""} · saved selection`;
         option.selected = true; select.prepend(option);
@@ -395,10 +533,17 @@ function updateSpeechRangeLabels() {
 }
 
 function speechText(text) {
-    // The chat renderer treats *...* as actions; common bracketed and explicitly marked thoughts are omitted too.
-    return String(text).replace(/<thought\b[^>]*>[\s\S]*?<\/thought>/gi, " ")
-        .replace(/\*[^*]*\*/g, " ").replace(/\[\[[\s\S]*?\]\]/g, " ").replace(/\[[^\]]*\]/g, " ")
-        .replace(/\s+/g, " ").trim();
+    const quoted = [];
+    const placeholder = index => `\u0000Q${index}\u0000`;
+    let outsideQuotes = String(text).replace(/"(?:\\.|[^"\\])*"|“[^”]*”/g, match => {
+        const content = match.slice(1, -1);
+        quoted.push(content.replace(/[*_\[\]]/g, ""));
+        return placeholder(quoted.length - 1);
+    });
+    outsideQuotes = outsideQuotes.replace(/<thought\b[^>]*>[\s\S]*?<\/thought>/gi, " ")
+        .replace(/\*[^*]*\*/g, " ").replace(/\[\[[\s\S]*?\]\]/g, " ").replace(/\[[^\]]*\]/g, " ");
+    quoted.forEach((content, index) => { outsideQuotes = outsideQuotes.replace(placeholder(index), content); });
+    return outsideQuotes.replace(/\s+/g, " ").trim();
 }
 
 function speakCharacterReply(text) {

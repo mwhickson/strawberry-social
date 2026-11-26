@@ -56,11 +56,17 @@
                         <div><span class="eyebrow">CHARACTER SPEECH</span><h2>Text to speech</h2><p>Use voices available in this browser to read character replies aloud.</p></div>
                         <label class="speech-toggle"><input id="speech-enabled" type="checkbox"><span><strong>Enable character speech</strong><small>Show a speak button on character replies.</small></span></label>
                         <label class="speech-toggle"><input id="speech-auto" type="checkbox"><span><strong>Speak replies automatically</strong><small>When off, use the speak button on a reply. Automatic speech is off by default.</small></span></label>
+                        <label class="field-label" for="speech-language">Language family</label>
+                        <select class="text-field" id="speech-language"><option value="">All languages</option></select>
+                        <label class="field-label" for="speech-variant" id="speech-variant-label" hidden>Region or variant</label>
+                        <select class="text-field" id="speech-variant" hidden><option value="">All variants</option></select>
+                        <button id="speech-refresh-voices" class="secondary-button" type="button" hidden>Retry voice scan</button>
                         <label class="field-label" for="speech-voice-search">Find a voice</label>
-                        <input class="text-field" id="speech-voice-search" type="search" placeholder="Search name or language (e.g. English, en-US)" autocomplete="off">
+                        <input class="text-field" id="speech-voice-search" type="search" placeholder="Search voices, regions, or providers (e.g. Caribbean, UK, eSpeak)" autocomplete="off">
                         <p id="speech-voice-count" class="field-hint" aria-live="polite">Loading browser voices…</p>
                         <label class="field-label" for="speech-voice">Voice</label>
                         <select class="text-field" id="speech-voice" size="7" aria-describedby="speech-voice-count"></select>
+                        <button id="speech-show-more" class="secondary-button" type="button" hidden>Show more voices</button>
                         <div class="generation-field-grid speech-range-grid">
                             <div><label class="field-label" for="speech-rate">Rate <output id="speech-rate-value">1.0</output></label><input class="text-field" id="speech-rate" type="range" min="0.1" max="2" step="0.1" value="1"></div>
                             <div><label class="field-label" for="speech-pitch">Pitch <output id="speech-pitch-value">1.0</output></label><input class="text-field" id="speech-pitch" type="range" min="0" max="2" step="0.1" value="1"></div>
