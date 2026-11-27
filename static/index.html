@@ -8,7 +8,7 @@
 </head>
 <body>
     <div class="app-shell">
-        <aside class="app-sidebar">
+        <aside id="app-sidebar" class="app-sidebar">
             <a class="brand" href="#chat" aria-label="Strawberry Social home"><span class="brand-mark">🍓</span><span><strong>Strawberry Social</strong><small>Character chat</small></span></a>
             <nav class="primary-nav" aria-label="Main navigation">
                 <button class="nav-item active" data-view="chat"><span>▤</span> Chats</button>
@@ -26,6 +26,7 @@
 
         <main class="workspace">
             <div class="workspace-statusbar" data-state="offline">
+                <button id="sidebar-toggle" class="sidebar-toggle" type="button" aria-label="Hide navigation sidebar" aria-controls="app-sidebar" aria-expanded="true" title="Hide navigation sidebar"><span aria-hidden="true">☰</span></button>
                 <span id="server-status-indicator" class="server-status-indicator" data-state="offline"></span><span class="server-status-label">llama.cpp</span><strong id="server-status-text">Offline</strong><span id="server-status-detail" class="server-status-detail">The managed server is stopped.</span>
                 <div class="application-status" data-state="running" role="status" aria-label="Strawberry Social is running"><span class="application-status-indicator"></span><strong id="application-status-text">App running</strong></div>
                 <button id="shutdown-app-btn" class="shutdown-button" type="button" title="Closing the app stops the web server and managed llama.cpp process."><span aria-hidden="true">⏻</span> Close app</button>

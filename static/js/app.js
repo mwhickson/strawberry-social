@@ -46,6 +46,13 @@ function bindNavigation() {
 }
 
 function bindApplicationControls() {
+    const sidebarToggle = $("#sidebar-toggle");
+    sidebarToggle.addEventListener("click", () => {
+        const collapsed = document.querySelector(".app-shell").classList.toggle("sidebar-collapsed");
+        sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
+        sidebarToggle.setAttribute("aria-label", collapsed ? "Show navigation sidebar" : "Hide navigation sidebar");
+        sidebarToggle.title = collapsed ? "Show navigation sidebar" : "Hide navigation sidebar";
+    });
     const button = $("#shutdown-app-btn");
     const status = $("#application-status-text");
     button.addEventListener("click", async () => {
