@@ -21,6 +21,12 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 document.addEventListener("DOMContentLoaded", initializeApp);
 
 async function initializeApp() {
+    syncVisualViewport();
+    if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", syncVisualViewport);
+        window.visualViewport.addEventListener("scroll", syncVisualViewport);
+    }
+    window.addEventListener("resize", syncVisualViewport);
     bindNavigation();
     bindChat();
     bindUploads();
@@ -38,21 +44,38 @@ async function initializeApp() {
     window.setInterval(() => { refreshServerStatus(); refreshDownloadStatus(); }, 1200);
 }
 
+function syncVisualViewport() {
+    const height = window.visualViewport?.height || window.innerHeight;
+    const top = window.visualViewport?.offsetTop || 0;
+    document.documentElement.style.setProperty("--viewport-height", `${height}px`);
+    document.documentElement.style.setProperty("--viewport-offset-top", `${top}px`);
+}
+
 function bindNavigation() {
-    $$(".nav-item").forEach(button => button.addEventListener("click", () => navigate(button.dataset.view)));
+    $$(".nav-item").forEach(button => button.addEventListener("click", () => {
+        navigate(button.dataset.view);
+        closeMobileSidebar();
+    }));
     window.addEventListener("hashchange", () => navigate(location.hash.slice(1) || "chat", false));
     const initial = location.hash.slice(1);
     if (["chat", "profiles", "models", "settings"].includes(initial)) navigate(initial, false);
 }
 
 function bindApplicationControls() {
+    if (window.matchMedia("(max-width: 760px)").matches) closeMobileSidebar();
     const sidebarToggle = $("#sidebar-toggle");
     sidebarToggle.addEventListener("click", () => {
-        const collapsed = document.querySelector(".app-shell").classList.toggle("sidebar-collapsed");
-        sidebarToggle.setAttribute("aria-expanded", String(!collapsed));
-        sidebarToggle.setAttribute("aria-label", collapsed ? "Show navigation sidebar" : "Hide navigation sidebar");
-        sidebarToggle.title = collapsed ? "Show navigation sidebar" : "Hide navigation sidebar";
+        const shell = $(".app-shell");
+        if (window.matchMedia("(max-width: 760px)").matches) {
+            shell.classList.toggle("sidebar-open");
+            setSidebarToggleState(shell.classList.contains("sidebar-open"));
+        } else {
+            const collapsed = shell.classList.toggle("sidebar-collapsed");
+            setSidebarToggleState(!collapsed);
+        }
     });
+    $("#sidebar-backdrop").addEventListener("click", closeMobileSidebar);
+    window.matchMedia("(max-width: 760px)").addEventListener("change", closeMobileSidebar);
     const button = $("#shutdown-app-btn");
     const status = $("#application-status-text");
     button.addEventListener("click", async () => {
@@ -78,6 +101,20 @@ function bindApplicationControls() {
         state.dismissedDownloadId = state.downloadId;
         $("#model-download-progress").hidden = true;
     });
+}
+
+function setSidebarToggleState(expanded) {
+    const button = $("#sidebar-toggle");
+    const label = expanded ? "Close navigation sidebar" : "Open navigation sidebar";
+    button.setAttribute("aria-expanded", String(expanded));
+    button.setAttribute("aria-label", label);
+    button.title = label;
+}
+
+function closeMobileSidebar() {
+    const shell = $(".app-shell");
+    shell.classList.remove("sidebar-open");
+    setSidebarToggleState(!window.matchMedia("(max-width: 760px)").matches && !shell.classList.contains("sidebar-collapsed"));
 }
 
 function setApplicationStatus(stateName, label) {
@@ -176,7 +213,6 @@ async function createSession(character) {
         setChatEnabled(true);
         await Promise.all([loadSessions(), loadMessages(session.id)]);
         navigate("chat");
-        $("#message-input").focus();
     } catch (error) { console.error("Failed to create chat:", error); showChatError("Could not start this chat."); }
 }
 
